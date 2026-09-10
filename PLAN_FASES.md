@@ -6,9 +6,9 @@ El TP1 pide construir en Packet Tracer una red con **firewall ASA 5505**, salida
 vía **Router ISP**, tres VLANs internas y una **DMZ** con servidor web, aplicando **ACLs con
 mínimo privilegio**. La consigna y la topología objetivo se extrajeron de `CONSIGNA.pdf`.
 
-El archivo `clase_2.pkt` (ver `ESTADO_ACTUAL.md`) usa un diseño distinto (router-on-a-stick con
-dos 1941 + OSPF, direccionamiento 172.16/200.1.1.0) que **no encaja** con el diseño ASA/DMZ del
-TP. **Decisión: se descarta `clase_2.pkt` y se construye `RESOLUCION.pkt` desde cero.**
+El archivo `clase_2.pkt` de la clase usaba un diseño distinto (router-on-a-stick con dos 1941 +
+OSPF, direccionamiento 172.16/200.1.1.0) que **no encaja** con el diseño ASA/DMZ del TP.
+**Decisión: se descartó `clase_2.pkt` y se construye `RESOLUCION.pkt` desde cero.**
 
 ## Perfil del usuario y modo de ejecución
 
