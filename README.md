@@ -43,22 +43,29 @@ comprimidos en `TP1_SSI_ApellidoNombre.zip`.
 
 ## Cómo está organizado el desarrollo
 El trabajo avanza en **5 fases graduales**, cada una con un estado verificable antes de pasar a la
-siguiente. El detalle completo está en **[`PLAN_FASES.md`](PLAN_FASES.md)**:
+siguiente. Plan completo en **[`PLAN_FASES.md`](PLAN_FASES.md)**; pasos ya ejecutados (GUI+CLI)
+en **[`EJECUCION.md`](EJECUCION.md)**.
 
-1. **Fase 1** — Topología física + direccionamiento (consignas 1 y 2).
-2. **Fase 2** — Inter-VLAN (consigna 3).
+1. ✅ **Fase 1** — Topología física + direccionamiento (consignas 1 y 2). **Completa.**
+2. ▶️ **Fase 2** — Inter-VLAN (consigna 3). **Próxima a hacer.**
 3. **Fase 3** — Salida a Internet + publicación de DMZ por NAT.
 4. **Fase 4** — ACLs con mínimo privilegio (consigna 4).
 5. **Fase 5** — Análisis, verificación final y entrega (consigna 5).
+
+> **Para quien siga con Fase 2:** la ASA 5505 de este simulador tiene licencia **Base** (máximo ~2
+> interfaces `nameif` libres + 1 restringida). Con `outside`+`dmz` ya ocupados, es muy probable que
+> haga falta pivotear el inter-VLAN a un switch L3 / router interno en vez de subinterfaces en la
+> ASA. Detalle en `PLAN_FASES.md` (checkpoint de contingencia) y `EJECUCION.md` (Fase 1, Tarea 4).
 
 ## Archivos del repositorio
 | Archivo | Qué es |
 |---|---|
 | `CONSIGNA.pdf` | Consigna original de la cátedra. |
 | `PLAN_FASES.md` | Plan maestro: fases, inventario, direccionamiento, ACLs, riesgos. |
+| `EJECUCION.md` | Bitácora paso a paso (GUI+CLI) de lo ya configurado, fase por fase, con checklist. |
 | `GLOSARIO.md` | Glosario de componentes, conceptos y CLI básico (apoyo para el armado). |
 | `CLAUDE.md` | Guía de trabajo para el asistente (modo de desarrollo y decisiones). |
-| `RESOLUCION.pkt` | *(pendiente)* La red de Packet Tracer, se construye durante las fases. |
+| `RESOLUCION.pkt` | La red de Packet Tracer. Fase 1 ya construida; se sigue completando por fases. |
 
 ## Nota sobre los archivos `.pkt`
 Los archivos de Packet Tracer están **cifrados** (no son texto plano), por lo que se abren
