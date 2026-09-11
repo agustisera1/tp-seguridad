@@ -147,5 +147,9 @@ inter-VLAN, DMZ y acceso de Externos funcionando.
 
 ## Estado y próximos pasos
 - [x] Plan y documentación (este archivo + `GLOSARIO.md`).
-- [ ] **Fase 1** — arranca cuando el usuario lo indique (no se construye nada antes).
-- [ ] Fases 2 a 5.
+- [x] **Fase 1** — completa. Detalle paso a paso en `EJECUCION.md`.
+- [ ] **Fase 2** — arranca cuando el usuario lo indique. Ya sabemos que la ASA 5505 corre con
+      licencia Base (tope ~2 interfaces `nameif` libres + 1 restringida), así que el checkpoint de
+      contingencia de esta fase (¿soporta trunk/subif para VLAN10/20/30?) muy probablemente dispare
+      el pivot a switch L3 / router interno para el inter-VLAN.
+- [ ] Fases 3 a 5.
