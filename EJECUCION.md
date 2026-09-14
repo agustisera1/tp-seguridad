@@ -326,8 +326,128 @@ que puedas y lo valido contra este checklist antes de pasar a Fase 2.
 WEB-SERVER → 100% (4/4, 0% loss). VLANs, trunk e interfaces de ASA ya verificados en las tareas
 anteriores. **Fase 1 completa.**
 
+**Errata post-cierre (2026-09-14):** la Tarea 4 (ASA `outside`/`dmz`) quedó **superada**. Al migrar
+a Router 4331 en Fase 2 (por el límite de licencia de la ASA, ver sección "Migración" abajo), esas
+dos interfaces se reconfiguran en el nuevo dispositivo. El resto de Fase 1 (Tareas 1, 2, 3, 5)
+sigue vigente sin cambios — no hace falta tocarlas.
+
 ---
 
-## Fase 2 — Inter-VLAN y conectividad L3 interna
+## Fase 2 — Migración a Router 4331 + Inter-VLAN
 
-*(se completa cuando arranquemos esta fase)*
+**Objetivo de la fase** (`PLAN_FASES.md`): reemplazar la ASA 5505 por el Router Cisco 4331 en el
+rol de perímetro, y dejar las 3 VLANs internas con su propio gateway (inter-VLAN real).
+**Estado al cierre:** las VLANs se pingean entre sí y alcanzan la DMZ; el enlace WAN sigue up.
+
+**Motivo de la migración (por qué ya no es una ASA):** ver `FIREWALL_LICENSE_ISSUE.md` — límite de
+licencia de la ASA 5505 y el tradeoff router-vs-firewall dedicado.
+
+- [ ] Tarea 2 — Reemplazar la ASA 5505 por el Router 4331 en el lienzo (GUI)
+- [ ] Tarea 3 — Router 4331: interfaces `outside`, `dmz` y subinterfaces VLAN10/20/30 (CLI)
+- [ ] Tarea 4 — Confirmar el trunk de SW-LAN apunta al puerto correcto del 4331
+- [ ] Verificación de cierre de Fase 2
+
+### Tarea 2 — Reemplazar la ASA 5505 por el Router 4331 (GUI)
+
+**Pasos:**
+1. En el lienzo, hacé click en cada uno de los 3 cables conectados a la ASA 5505 (hacia Router
+   ISP, hacia SW-DMZ, hacia SW-LAN) y eliminalos (seleccionar el cable → tecla `Delete`).
+2. Seleccioná la ASA 5505 y eliminala (`Delete`). Si querés conservar referencia de su config
+   vieja, ya está documentada en la Tarea 4 de Fase 1 — no hace falta guardar nada más.
+3. Panel de dispositivos → categoría **Network Devices → Router** → buscá el modelo **4331** y
+   arrastralo al lienzo, en el lugar donde estaba la ASA.
+4. **Antes de cablear, revisá los puertos disponibles:** doble clic en el 4331 → pestaña
+   **Physical**. Si trae menos de 3 puertos Gigabit Ethernet habilitados, hay que agregar un
+   módulo con puertos adicionales: apagá el equipo (botón de power en el dibujo del router),
+   arrastrá un módulo NIM con puertos Ethernet a un slot libre, y volvé a prenderlo. Necesitás
+   **3 puertos en total**: uno a Router ISP, uno a SW-DMZ, uno a SW-LAN.
+5. Cableá con **Copper Straight-Through** (o el que corresponda) los 3 enlaces: 4331↔Router ISP,
+   4331↔SW-DMZ, 4331↔SW-LAN. Fijate el nombre real de cada puerto pasando el mouse sobre el cable.
+
+### Tarea 3 — Router 4331: `outside`, `dmz` y subinterfaces VLAN10/20/30 (CLI)
+
+**Objetivo:** dejar el 4331 con las mismas IPs que tenía la ASA en `outside`/`dmz`, más un gateway
+propio por VLAN.
+**Para qué:** en un router no existe el concepto de interfaz `Vlan<N>` con `nameif` de la ASA —
+cada interfaz física o subinterfaz simplemente tiene una IP y ya reenvía tráfico; no hace falta
+nombrarla ni asignarle un "security-level" para que funcione.
+
+**Pasos (CLI, doble clic en el Router 4331 → CLI). Reemplazá los nombres de puerto por los reales
+que viste en la Tarea 2:**
+```
+enable
+configure terminal
+hostname R-PERIMETRO
+
+! ---- outside: hacia Router ISP (antes en la ASA) ----
+interface GigabitEthernet0/0/0
+ ip address 200.10.10.2 255.255.255.252
+ no shutdown
+ description Enlace a Router ISP (outside)
+exit
+
+! ---- dmz: hacia SW-DMZ / WEB-SERVER (antes en la ASA) ----
+interface GigabitEthernet0/0/1
+ ip address 192.168.40.1 255.255.255.0
+ no shutdown
+ description Enlace a SW-DMZ (dmz)
+exit
+
+! ---- trunk hacia SW-LAN: una subinterfaz por VLAN ----
+interface GigabitEthernet0/0/2
+ no shutdown
+ description Trunk hacia SW-LAN (inter-VLAN)
+exit
+
+interface GigabitEthernet0/0/2.10
+ encapsulation dot1Q 10
+ ip address 192.168.10.1 255.255.255.0
+ description Gateway VLAN10 ADMINISTRACION
+exit
+
+interface GigabitEthernet0/0/2.20
+ encapsulation dot1Q 20
+ ip address 192.168.20.1 255.255.255.0
+ description Gateway VLAN20 SISTEMAS
+exit
+
+interface GigabitEthernet0/0/2.30
+ encapsulation dot1Q 30
+ ip address 192.168.30.1 255.255.255.0
+ description Gateway VLAN30 USUARIOS
+exit
+
+end
+write memory
+```
+- `encapsulation dot1Q <N>`: le dice a la subinterfaz qué etiqueta de VLAN escuchar/poner en los
+  paquetes — es el equivalente en IOS al `switchport access vlan N` que usaba la ASA, pero acá las
+  3 conviven en el mismo puerto físico porque es un trunk real.
+- No hace falta `nameif` ni `security-level`: en IOS un router reenvía entre todas sus interfaces
+  por defecto (a diferencia de la ASA, que bloquea por default salvo que el nivel lo permita). Esto
+  es justo la diferencia que se retoma en Fase 4 con las ACLs.
+
+### Tarea 4 — Confirmar el trunk de SW-LAN
+
+**Objetivo:** verificar que el puerto trunk de SW-LAN (configurado en Fase 1, Tarea 5) sigue
+apuntando al puerto correcto ahora que el otro extremo es el 4331 y no la ASA.
+**Pasos:** en SW-LAN, `show interfaces trunk` — confirmá que el puerto conectado al 4331 sigue
+en modo trunk con VLANs 10,20,30 permitidas. Si por el recableo terminó en un puerto físico
+distinto, repetí ahí la config de trunk de la Tarea 5 de Fase 1 (`switchport trunk encapsulation
+dot1q` / `switchport mode trunk` / `switchport trunk allowed vlan 10,20,30`).
+
+### Verificación de cierre de Fase 2
+
+| Prueba | Desde | Comando | Resultado esperado |
+|---|---|---|---|
+| Enlace WAN | Router ISP | `ping 200.10.10.2` | Responde (Router 4331, outside) |
+| Enlace DMZ | Router 4331 | `ping 192.168.40.10` | Responde (WEB-SERVER) |
+| Gateway VLAN10 | PC-ADM1 | `ping 192.168.10.1` | Responde |
+| Gateway VLAN20 | PC-SIS1 | `ping 192.168.20.1` | Responde |
+| Gateway VLAN30 | PC-USR1 | `ping 192.168.30.1` | Responde |
+| Inter-VLAN | PC-ADM1 | `ping 192.168.20.10` (PC-SIS1) | Responde — confirma comunicación entre VLAN (consigna 3) |
+| Inter-VLAN | PC-ADM1 | `ping 192.168.30.10` (PC-USR1) | Responde |
+| Interfaces 4331 | Router 4331 | `show ip interface brief` | `outside`, `dmz` y las 3 subinterfaces up/up |
+
+Cuando corras esto, pasame los resultados (capturas o texto) y lo valido contra este checklist
+antes de pasar a Fase 3.

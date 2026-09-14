@@ -40,12 +40,10 @@ con la consigna. Se marca lo que la cátedra **no pide**:
 ## Decisiones tomadas
 
 1. **Archivo:** nuevo `RESOLUCION.pkt`, desde cero. Se desestima `clase_2.pkt`.
-2. **Inter-VLAN + firewall:** la **ASA 5505 hace todo**, fiel a la imagen — es gateway de las 3
-   VLANs mediante **subinterfaces 802.1Q sobre `inside`** (trunk al SW-LAN) y maneja `outside`,
-   `dmz` y las ACLs.
-   - **Checkpoint de contingencia (Fase 2):** si la ASA 5505 de Packet Tracer no soporta
-     trunk/subinterfaces, se pivotea a inter-VLAN con **switch L3 / router interno**, dejando la
-     ASA solo para perímetro+DMZ. No cambia las fases 3–5.
+2. **Perímetro + inter-VLAN — MIGRACIÓN CONFIRMADA:** la ASA 5505 se **reemplaza por el Router
+   Cisco 4331** para este rol (la consigna los da como equivalentes: "1 Router Cisco 4331 /
+   Firewall ASA"). Motivo, matemática de la limitante de licencia y el tradeoff router-vs-firewall:
+   ver **`FIREWALL_LICENSE_ISSUE.md`**. Pasos GUI+CLI de la migración: `EJECUCION.md` (Fase 2).
 
 ## Topología e inventario objetivo (según la imagen de la consigna)
 
@@ -54,8 +52,8 @@ con la consigna. Se marca lo que la cátedra **no pide**:
             |
         Router ISP  200.10.10.1/30
             | (outside 200.10.10.2/30)
-          ASA 5505 ───────── dmz 192.168.40.1/24 ── SW-DMZ ── WEB-SERVER 192.168.40.10/24
-            | (inside, trunk 802.1Q)
+      Router 4331 ───────── dmz 192.168.40.1/24 ── SW-DMZ ── WEB-SERVER 192.168.40.10/24
+            | (subinterfaces 802.1Q, trunk hacia SW-LAN)
           SW-LAN
         /   |   \
    VLAN10 VLAN20 VLAN30
@@ -66,8 +64,8 @@ con la consigna. Se marca lo que la cátedra **no pide**:
 | Dispositivo | Rol | Notas |
 |---|---|---|
 | Router ISP | Borde hacia Internet | 200.10.10.1/30; enlace a la nube Internet |
-| ASA 5505 | Firewall perímetro + inter-VLAN | outside .2/30, inside (subif VLAN10/20/30), dmz .40.1/24 |
-| SW-LAN (2960) | Acceso interno | VLAN 10/20/30, puertos de acceso + trunk a ASA |
+| Router 4331 | Perímetro + inter-VLAN + firewall (ACLs) | outside .2/30, subif VLAN10/20/30 (trunk a SW-LAN), dmz .40.1/24 |
+| SW-LAN (2960) | Acceso interno | VLAN 10/20/30, puertos de acceso + trunk al Router 4331 |
 | SW-DMZ (2960) | Acceso DMZ | Conecta WEB-SERVER |
 | WEB-SERVER | Servidor de servicios | HTTP/HTTPS/FTP (+SSH ver riesgo) |
 | PC-ADM1 / PC-SIS1 / PC-USR1 | Clientes por segmento | Uno por VLAN |
@@ -78,13 +76,15 @@ con la consigna. Se marca lo que la cátedra **no pide**:
 
 | Segmento | VLAN | Red / Máscara | Gateway | Host de prueba |
 |---|---|---|---|---|
-| Administración | 10 | 192.168.10.0 /24 | 192.168.10.1 (ASA sub-if) | PC-ADM1 .10.10 |
-| Sistemas | 20 | 192.168.20.0 /24 | 192.168.20.1 (ASA sub-if) | PC-SIS1 .20.10 |
-| Usuarios | 30 | 192.168.30.0 /24 | 192.168.30.1 (ASA sub-if) | PC-USR1 .30.10 |
-| DMZ | — | 192.168.40.0 /24 | 192.168.40.1 (ASA dmz) | WEB-SERVER .40.10 |
-| WAN | — | 200.10.10.0 /30 | ISP .1 / ASA outside .2 | — |
+| Administración | 10 | 192.168.10.0 /24 | 192.168.10.1 (subif Router 4331) | PC-ADM1 .10.10 |
+| Sistemas | 20 | 192.168.20.0 /24 | 192.168.20.1 (subif Router 4331) | PC-SIS1 .20.10 |
+| Usuarios | 30 | 192.168.30.0 /24 | 192.168.30.1 (subif Router 4331) | PC-USR1 .30.10 |
+| DMZ | — | 192.168.40.0 /24 | 192.168.40.1 (Router 4331, dmz) | WEB-SERVER .40.10 |
+| WAN | — | 200.10.10.0 /30 | ISP .1 / Router 4331 outside .2 | — |
 
-Security-levels ASA: `outside` 0, `dmz` 50, `inside`/VLANs 100.
+El Router 4331 (IOS) no tiene security-levels: no hay default-deny implícito entre interfaces
+como en la ASA. Todo el control de acceso entre segmentos se implementa a pulso con **ACLs
+extendidas por interfaz** en Fase 4 — ver tradeoff en `FIREWALL_LICENSE_ISSUE.md`.
 
 ## Matriz de ACLs (consigna 4 — mínimo privilegio, destino = WEB-SERVER salvo aclaración)
 
@@ -94,6 +94,9 @@ Security-levels ASA: `outside` 0, `dmz` 50, `inside`/VLANs 100.
 | Usuarios | HTTPS | todo lo demás |
 | Sistemas | HTTPS, HTTP, FTP, SSH, ICMP **+ redes Usuarios y Admin** | todo lo demás |
 | Externos (Internet) | HTTPS, FTP (subir archivos) → DMZ publicada por NAT | todo lo demás |
+
+*(Implementación en Fase 4: ACLs extendidas nombradas de IOS en las subinterfaces del Router
+4331, no `access-list`/`object-group` de sintaxis ASA.)*
 
 ## Fases (graduales, cada una deja la red en estado verificable)
 
@@ -107,12 +110,14 @@ se valida el "estado al terminar" antes de pasar a la siguiente.
 - SW-DMZ: puerto de acceso al WEB-SERVER.
 - **Estado al terminar:** ping dentro de cada VLAN y de cada host a su gateway. Enlaces up.
 
-### Fase 2 — Inter-VLAN y conectividad L3 interna  *(consigna 3)*
-- ASA: subinterfaces `inside.10/.20/.30` (dot1Q) como gateways; permitir tránsito entre VLANs
-  antes de restringir con ACLs.
-- **Checkpoint de contingencia:** verificar que la ASA 5505 de PT soporta trunk/subif; si no,
-  pivotear a switch L3 / router interno.
-- **Estado al terminar:** todas las VLANs se pingean entre sí y alcanzan la DMZ y la ASA.
+### Fase 2 — Migración a Router 4331 + Inter-VLAN  *(consigna 3)*
+- Reemplazar la ASA 5505 por el **Router Cisco 4331** (motivo: límite de licencia, ver
+  Decisiones). Recablear los 3 enlaces existentes (Router ISP, SW-DMZ, SW-LAN) al nuevo
+  dispositivo.
+- Router 4331: reconfigurar `outside` y `dmz` (antes en la ASA) + subinterfaces `.10/.20/.30`
+  (dot1Q) sobre el puerto trunk hacia SW-LAN, como gateway de cada VLAN.
+- **Estado al terminar:** todas las VLANs se pingean entre sí, alcanzan la DMZ, y el enlace WAN
+  hacia Router ISP sigue up. Todavía sin ACLs restrictivas (eso es Fase 4).
 
 ### Fase 3 — Salida a Internet y publicación de DMZ  *(ruteo + NAT)*
 - Router ISP configurado; ruta por defecto ASA→ISP.
@@ -135,10 +140,12 @@ se valida el "estado al terminar" antes de pasar a la siguiente.
 - *(Opcional)* Hardening: `enable secret`, `service password-encryption`, SSH, banner MOTD.
 
 ## Riesgos / puntos a resolver durante la ejecución
-- **ASA 5505 trunk/subif en PT:** contingencia prevista en Fase 2.
+- **ASA 5505 licencia Base (RESUELTO):** migración a Router 4331. Detalle y tradeoff en
+  `FIREWALL_LICENSE_ISSUE.md`.
 - **SSH al WEB-SERVER:** el Server-PT no ofrece SSH nativo; se decide en Fase 4 si se permite
   igual a nivel ACL o se representa contra un dispositivo de red en la DMZ.
-- **"Externos":** requiere NAT estático + ACL en outside; validado con PC-EXT en Fase 3.
+- **"Externos":** requiere NAT estático (sintaxis `ip nat` de IOS en vez de la de ASA) + ACL en
+  outside; validado con PC-EXT en Fase 3.
 
 ## Verificación end-to-end
 Al cerrar cada fase se corre su chequeo (ping/tracert/servicios). Verificación global final:
@@ -147,9 +154,9 @@ inter-VLAN, DMZ y acceso de Externos funcionando.
 
 ## Estado y próximos pasos
 - [x] Plan y documentación (este archivo + `GLOSARIO.md`).
-- [x] **Fase 1** — completa. Detalle paso a paso en `EJECUCION.md`.
-- [ ] **Fase 2** — arranca cuando el usuario lo indique. Ya sabemos que la ASA 5505 corre con
-      licencia Base (tope ~2 interfaces `nameif` libres + 1 restringida), así que el checkpoint de
-      contingencia de esta fase (¿soporta trunk/subif para VLAN10/20/30?) muy probablemente dispare
-      el pivot a switch L3 / router interno para el inter-VLAN.
+- [x] **Fase 1** — completa (topología, IPs, VLANs/trunk en SW-LAN). **Errata:** la Tarea 4 (ASA
+      `outside`/`dmz`) queda superada por la migración a Router 4331 — se rehace al arrancar
+      Fase 2, ver `EJECUCION.md`.
+- [ ] **Fase 2** — migración ASA→4331 + inter-VLAN. Instructivo GUI+CLI completo en
+      `EJECUCION.md`, listo para ejecutar.
 - [ ] Fases 3 a 5.
