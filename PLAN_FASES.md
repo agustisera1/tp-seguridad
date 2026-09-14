@@ -40,13 +40,12 @@ con la consigna. Se marca lo que la cátedra **no pide**:
 ## Decisiones tomadas
 
 1. **Archivo:** nuevo `RESOLUCION.pkt`, desde cero. Se desestima `clase_2.pkt`.
-2. **Inter-VLAN + firewall — PIVOT CONFIRMADO (Fase 2):** la ASA 5505 de este `.pkt` corre con
-   **licencia Base** (tope ~2 `nameif` completas + 1 restringida; sin soporte de trunk/subinterfaces
-   802.1Q, eso es Security Plus). Con `outside`+`dmz` ya ocupando las 2 completas, no hay margen
-   para 3 subinterfaces VLAN10/20/30 más. Se descarta la idea original ("ASA hace todo") y se
-   pivotea: un **switch L3 (3560, "SW-L3")** hace el inter-VLAN (SVIs como gateway de cada VLAN),
-   y la ASA queda solo para **perímetro + DMZ**, con un 3er `nameif` `inside` como enlace routeado
-   punto a punto hacia SW-L3 (no trunk). Detalle y justificación en `EJECUCION.md` Fase 2.
+2. **Inter-VLAN + firewall:** la **ASA 5505 hace todo**, fiel a la imagen — es gateway de las 3
+   VLANs mediante **subinterfaces 802.1Q sobre `inside`** (trunk al SW-LAN) y maneja `outside`,
+   `dmz` y las ACLs.
+   - **Checkpoint de contingencia (Fase 2):** si la ASA 5505 de Packet Tracer no soporta
+     trunk/subinterfaces, se pivotea a inter-VLAN con **switch L3 / router interno**, dejando la
+     ASA solo para perímetro+DMZ. No cambia las fases 3–5.
 
 ## Topología e inventario objetivo (según la imagen de la consigna)
 
@@ -56,9 +55,7 @@ con la consigna. Se marca lo que la cátedra **no pide**:
         Router ISP  200.10.10.1/30
             | (outside 200.10.10.2/30)
           ASA 5505 ───────── dmz 192.168.40.1/24 ── SW-DMZ ── WEB-SERVER 192.168.40.10/24
-            | (inside 192.168.50.1/30, enlace routeado punto a punto, SIN trunk)
-          SW-L3 (192.168.50.2/30) ── SVIs Vlan10/20/30 = gateway de cada VLAN
-            | (trunk 802.1Q)
+            | (inside, trunk 802.1Q)
           SW-LAN
         /   |   \
    VLAN10 VLAN20 VLAN30
@@ -69,9 +66,8 @@ con la consigna. Se marca lo que la cátedra **no pide**:
 | Dispositivo | Rol | Notas |
 |---|---|---|
 | Router ISP | Borde hacia Internet | 200.10.10.1/30; enlace a la nube Internet |
-| ASA 5505 | Firewall perímetro + DMZ | outside .2/30, inside .50.1/30 (punto a punto a SW-L3, `no forward interface outside`), dmz .40.1/24 |
-| SW-L3 (3560) | Inter-VLAN (routing) | `ip routing`, SVIs Vlan10/20/30 = gateway de cada VLAN, puerto routeado .50.2/30 hacia ASA, trunk hacia SW-LAN |
-| SW-LAN (2960) | Acceso interno | VLAN 10/20/30, puertos de acceso + trunk hacia SW-L3 |
+| ASA 5505 | Firewall perímetro + inter-VLAN | outside .2/30, inside (subif VLAN10/20/30), dmz .40.1/24 |
+| SW-LAN (2960) | Acceso interno | VLAN 10/20/30, puertos de acceso + trunk a ASA |
 | SW-DMZ (2960) | Acceso DMZ | Conecta WEB-SERVER |
 | WEB-SERVER | Servidor de servicios | HTTP/HTTPS/FTP (+SSH ver riesgo) |
 | PC-ADM1 / PC-SIS1 / PC-USR1 | Clientes por segmento | Uno por VLAN |
@@ -82,12 +78,11 @@ con la consigna. Se marca lo que la cátedra **no pide**:
 
 | Segmento | VLAN | Red / Máscara | Gateway | Host de prueba |
 |---|---|---|---|---|
-| Administración | 10 | 192.168.10.0 /24 | 192.168.10.1 (SVI en SW-L3) | PC-ADM1 .10.10 |
-| Sistemas | 20 | 192.168.20.0 /24 | 192.168.20.1 (SVI en SW-L3) | PC-SIS1 .20.10 |
-| Usuarios | 30 | 192.168.30.0 /24 | 192.168.30.1 (SVI en SW-L3) | PC-USR1 .30.10 |
+| Administración | 10 | 192.168.10.0 /24 | 192.168.10.1 (ASA sub-if) | PC-ADM1 .10.10 |
+| Sistemas | 20 | 192.168.20.0 /24 | 192.168.20.1 (ASA sub-if) | PC-SIS1 .20.10 |
+| Usuarios | 30 | 192.168.30.0 /24 | 192.168.30.1 (ASA sub-if) | PC-USR1 .30.10 |
 | DMZ | — | 192.168.40.0 /24 | 192.168.40.1 (ASA dmz) | WEB-SERVER .40.10 |
 | WAN | — | 200.10.10.0 /30 | ISP .1 / ASA outside .2 | — |
-| Transit ASA↔SW-L3 | — | 192.168.50.0 /30 | ASA inside .50.1 / SW-L3 .50.2 | — |
 
 Security-levels ASA: `outside` 0, `dmz` 50, `inside`/VLANs 100.
 
@@ -113,15 +108,11 @@ se valida el "estado al terminar" antes de pasar a la siguiente.
 - **Estado al terminar:** ping dentro de cada VLAN y de cada host a su gateway. Enlaces up.
 
 ### Fase 2 — Inter-VLAN y conectividad L3 interna  *(consigna 3)*
-- Agregar **SW-L3** (switch 3560), recablear el trunk de SW-LAN hacia SW-L3 (en vez de a la ASA),
-  y crear un enlace routeado punto a punto SW-L3↔ASA (`inside`, transit 192.168.50.0/30).
-- SW-L3: `ip routing` + SVIs Vlan10/20/30 (gateway de cada VLAN) + ruta por defecto hacia la ASA.
-- ASA: 3er `nameif` `inside` (Vlan1, sin trunk) + `no forward interface outside` (Base license
-  permite 3 VLANs pero la 3ra no puede iniciar tráfico hacia dos interfaces a la vez; se restringe
-  el salto directo inside→outside, que de todos modos es opcional) + rutas estáticas hacia las
-  redes VLAN vía SW-L3.
-- **Estado al terminar:** todas las VLANs se pingean entre sí, alcanzan la DMZ y la interfaz
-  `inside` de la ASA.
+- ASA: subinterfaces `inside.10/.20/.30` (dot1Q) como gateways; permitir tránsito entre VLANs
+  antes de restringir con ACLs.
+- **Checkpoint de contingencia:** verificar que la ASA 5505 de PT soporta trunk/subif; si no,
+  pivotear a switch L3 / router interno.
+- **Estado al terminar:** todas las VLANs se pingean entre sí y alcanzan la DMZ y la ASA.
 
 ### Fase 3 — Salida a Internet y publicación de DMZ  *(ruteo + NAT)*
 - Router ISP configurado; ruta por defecto ASA→ISP.
@@ -144,11 +135,7 @@ se valida el "estado al terminar" antes de pasar a la siguiente.
 - *(Opcional)* Hardening: `enable secret`, `service password-encryption`, SSH, banner MOTD.
 
 ## Riesgos / puntos a resolver durante la ejecución
-- **ASA 5505 licencia Base (RESUELTO en Fase 1/2):** no soporta trunk/subinterfaces ni más de ~2-3
-  `nameif`. Se pivotea el inter-VLAN a SW-L3 (switch 3560), dejando la ASA solo para perímetro+DMZ.
-  Riesgo abierto: el 3er `nameif` (`inside`) podría chocar igual con la restricción de licencia al
-  intentar hablar con `dmz` y `outside` simultáneamente — se prueba `no forward interface outside`
-  como mitigación; si sigue fallando, documentar en `EJECUCION.md` y decidir alternativa ahí.
+- **ASA 5505 trunk/subif en PT:** contingencia prevista en Fase 2.
 - **SSH al WEB-SERVER:** el Server-PT no ofrece SSH nativo; se decide en Fase 4 si se permite
   igual a nivel ACL o se representa contra un dispositivo de red en la DMZ.
 - **"Externos":** requiere NAT estático + ACL en outside; validado con PC-EXT en Fase 3.
@@ -161,5 +148,8 @@ inter-VLAN, DMZ y acceso de Externos funcionando.
 ## Estado y próximos pasos
 - [x] Plan y documentación (este archivo + `GLOSARIO.md`).
 - [x] **Fase 1** — completa. Detalle paso a paso en `EJECUCION.md`.
-- [ ] **Fase 2** — pivot a switch L3 confirmado (ver arriba); pasos detallados en `EJECUCION.md`.
+- [ ] **Fase 2** — arranca cuando el usuario lo indique. Ya sabemos que la ASA 5505 corre con
+      licencia Base (tope ~2 interfaces `nameif` libres + 1 restringida), así que el checkpoint de
+      contingencia de esta fase (¿soporta trunk/subif para VLAN10/20/30?) muy probablemente dispare
+      el pivot a switch L3 / router interno para el inter-VLAN.
 - [ ] Fases 3 a 5.
