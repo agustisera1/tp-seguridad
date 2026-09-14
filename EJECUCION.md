@@ -342,10 +342,10 @@ rol de perímetro, y dejar las 3 VLANs internas con su propio gateway (inter-VLA
 **Motivo de la migración (por qué ya no es una ASA):** ver `FIREWALL_LICENSE_ISSUE.md` — límite de
 licencia de la ASA 5505 y el tradeoff router-vs-firewall dedicado.
 
-- [ ] Tarea 2 — Reemplazar la ASA 5505 por el Router 4331 en el lienzo (GUI)
-- [ ] Tarea 3 — Router 4331: interfaces `outside`, `dmz` y subinterfaces VLAN10/20/30 (CLI)
-- [ ] Tarea 4 — Confirmar el trunk de SW-LAN apunta al puerto correcto del 4331
-- [ ] Verificación de cierre de Fase 2
+- [x] Tarea 2 — Reemplazar la ASA 5505 por el Router 4331 en el lienzo (GUI)
+- [x] Tarea 3 — Router 4331: interfaces `outside`, `dmz` y subinterfaces VLAN10/20/30 (CLI)
+- [x] Tarea 4 — Confirmar el trunk de SW-LAN apunta al puerto correcto del 4331
+- [x] Verificación de cierre de Fase 2
 
 ### Tarea 2 — Reemplazar la ASA 5505 por el Router 4331 (GUI)
 
@@ -357,10 +357,13 @@ licencia de la ASA 5505 y el tradeoff router-vs-firewall dedicado.
 3. Panel de dispositivos → categoría **Network Devices → Router** → buscá el modelo **4331** y
    arrastralo al lienzo, en el lugar donde estaba la ASA.
 4. **Antes de cablear, revisá los puertos disponibles:** doble clic en el 4331 → pestaña
-   **Physical**. Si trae menos de 3 puertos Gigabit Ethernet habilitados, hay que agregar un
-   módulo con puertos adicionales: apagá el equipo (botón de power en el dibujo del router),
-   arrastrá un módulo NIM con puertos Ethernet a un slot libre, y volvé a prenderlo. Necesitás
-   **3 puertos en total**: uno a Router ISP, uno a SW-DMZ, uno a SW-LAN.
+   **Physical**. Los 3 puertos Gigabit onboard (`GigabitEthernet0/0/0`, `0/0/1`, `0/0/2`) son
+   slots **SFP** ubicados juntos en la **sección amarilla, arriba a la izquierda del chasis** — no
+   sirven hasta que les pongas un transceiver. Los que veas vacíos: apagá el equipo (interruptor de
+   power a la derecha del chasis), arrastrá el módulo **GLC-T** (SFP de cobre, lista de módulos a
+   la izquierda) a cada slot vacío de esa sección, y volvé a prenderlo. Con eso tenés los
+   **3 puertos** que necesitás: uno a Router ISP, uno a SW-DMZ, uno a SW-LAN. (Si tu versión de PT
+   ya trae alguno activo por defecto, no hace falta tocar ese — solo completá los que falten.)
 5. Cableá con **Copper Straight-Through** (o el que corresponda) los 3 enlaces: 4331↔Router ISP,
    4331↔SW-DMZ, 4331↔SW-LAN. Fijate el nombre real de cada puerto pasando el mouse sobre el cable.
 
@@ -372,15 +375,16 @@ propio por VLAN.
 cada interfaz física o subinterfaz simplemente tiene una IP y ya reenvía tráfico; no hace falta
 nombrarla ni asignarle un "security-level" para que funcione.
 
-**Pasos (CLI, doble clic en el Router 4331 → CLI). Reemplazá los nombres de puerto por los reales
-que viste en la Tarea 2:**
+**Pasos (CLI, doble clic en el Router 4331 → CLI). Estos nombres de puerto ya son los reales según
+cableaste vos: `0/0/0`→SW-LAN, `0/0/1`→SW-DMZ, `0/0/2`→Router ISP. Si en tu `.pkt` quedó distinto,
+ajustá los nombres antes de pegar:**
 ```
 enable
 configure terminal
 hostname R-PERIMETRO
 
 ! ---- outside: hacia Router ISP (antes en la ASA) ----
-interface GigabitEthernet0/0/0
+interface GigabitEthernet0/0/2
  ip address 200.10.10.2 255.255.255.252
  no shutdown
  description Enlace a Router ISP (outside)
@@ -394,24 +398,24 @@ interface GigabitEthernet0/0/1
 exit
 
 ! ---- trunk hacia SW-LAN: una subinterfaz por VLAN ----
-interface GigabitEthernet0/0/2
+interface GigabitEthernet0/0/0
  no shutdown
  description Trunk hacia SW-LAN (inter-VLAN)
 exit
 
-interface GigabitEthernet0/0/2.10
+interface GigabitEthernet0/0/0.10
  encapsulation dot1Q 10
  ip address 192.168.10.1 255.255.255.0
  description Gateway VLAN10 ADMINISTRACION
 exit
 
-interface GigabitEthernet0/0/2.20
+interface GigabitEthernet0/0/0.20
  encapsulation dot1Q 20
  ip address 192.168.20.1 255.255.255.0
  description Gateway VLAN20 SISTEMAS
 exit
 
-interface GigabitEthernet0/0/2.30
+interface GigabitEthernet0/0/0.30
  encapsulation dot1Q 30
  ip address 192.168.30.1 255.255.255.0
  description Gateway VLAN30 USUARIOS
@@ -451,3 +455,242 @@ dot1q` / `switchport mode trunk` / `switchport trunk allowed vlan 10,20,30`).
 
 Cuando corras esto, pasame los resultados (capturas o texto) y lo valido contra este checklist
 antes de pasar a Fase 3.
+
+**Cierre confirmado:** las 3 PCs pingean su gateway de VLAN y se pingean entre sí (inter-VLAN OK),
+el enlace WAN sigue up y el 4331 alcanza el WEB-SERVER por `dmz`. **Fase 2 completa.**
+
+---
+
+## Fase 3 — Salida a Internet y publicación de DMZ
+
+**Objetivo de la fase** (`PLAN_FASES.md`): que un cliente "Externo" (fuera de la organización)
+pueda llegar al WEB-SERVER publicado, solo por HTTPS y FTP (consigna punto 4, fila "Externos").
+**Estado al cierre:** PC-EXT (más allá del Router ISP) navega HTTPS y sube un archivo por FTP al
+WEB-SERVER publicado; cualquier otro puerto/servicio queda bloqueado.
+
+**Nota de alcance (leer antes de arrancar):** la imagen de la consigna no dibuja ningún PC más allá
+del Router ISP — solo la nube "Internet". Pero sin un cliente real ahí, no hay forma de generar
+tráfico HTTPS/FTP de verdad para las capturas que pide la entrega (un ping no alcanza). Se agrega
+**PC-EXT**, un PC genérico (misma categoría "PC" que ya contempla la lista de dispositivos de la
+consigna, no un equipo de red nuevo) conectado a la **Nube Internet que ya está en la topología**.
+El tramo Router ISP↔Nube↔PC-EXT necesita una subred que la consigna no da (no hay nada especificado
+más allá del Router ISP): se usa `100.100.100.0/30`, elegida arbitrariamente solo para poder probar
+— no es parte del direccionamiento oficial de `PLAN_FASES.md`.
+
+Todo lo demás de esta fase (NAT, ruta por defecto, ACL de entrada) usa **solo** los equipos ya
+presentes (Router ISP y Router 4331) — no se agrega hardware de red nuevo.
+
+**Sobre las ACL de esta fase:** acá solo se restringe el tráfico que **entra desde afuera**
+(Externos → DMZ), que es lo mínimo para no dejar el NAT abierto a cualquier puerto. La matriz
+completa de ACL para Administración/Sistemas/Usuarios es Fase 4.
+
+- [ ] Tarea 1 — PC-EXT: cablear a la Nube Internet + 2do puerto en Router ISP (GUI)
+- [ ] Tarea 2 — Router ISP: IP en el puerto nuevo hacia la Nube (CLI)
+- [ ] Tarea 3 — PC-EXT: IP fija (GUI)
+- [ ] Tarea 4 — Router 4331: ruta por defecto hacia Router ISP (CLI)
+- [ ] Tarea 5 — Router 4331: NAT estático del WEB-SERVER (CLI)
+- [ ] Tarea 6 — Router 4331: ACL de entrada en `outside` (CLI)
+- [ ] Tarea 7 — WEB-SERVER: activar HTTP/HTTPS/FTP (GUI)
+- [ ] Verificación de cierre de Fase 3
+
+### Tarea 1 — PC-EXT: cablear a la Nube Internet que ya existe (GUI)
+
+**Objetivo:** colgar PC-EXT de la Nube "INTERNET" que **ya está** en la topología (viene de Fase 1,
+cableada a `Router ISP:GigabitEthernet0/0/0` — hoy esa interfaz está apagada y sin IP, verificado
+en el `.pkt`).
+**Para qué:** no hace falta agregar ningún puerto nuevo en Router ISP — ya tiene uno cableado hacia
+la nube, solo estaba sin usar. Nos ahorramos un paso.
+
+**Pasos:**
+1. Doble clic en la **Nube "INTERNET"** → pestaña **Physical**. Fijate si le queda algún puerto
+   Ethernet libre además del que ya usa hacia Router ISP (`Ethernet6`). Si no, mismo procedimiento
+   que con el 4331: apagala, agregá un módulo Ethernet de la lista de la izquierda (por ejemplo
+   `PT-CLOUD-NM-1CFE`), prendela de nuevo.
+2. Doble clic en la Nube → pestaña **Config**. Buscá la sección de mapeo de puertos (puede
+   llamarse "Port Mapping" o similar, según tu versión de PT) y agregá una asociación entre el
+   puerto que ya va a Router ISP (`Ethernet6`) y el puerto nuevo que vas a usar para PC-EXT (por
+   ejemplo `Ethernet7`). Sin este mapeo, la nube no reenvía tráfico entre esos dos puertos aunque
+   estén cableados.
+3. Arrastrá un **PC** nuevo al lienzo, llamalo **PC-EXT**.
+4. Cableá con **Copper Straight-Through**: PC-EXT ↔ el puerto nuevo de la Nube (`Ethernet7`).
+
+Si en el paso 2 no encontrás la sección de mapeo de puertos, avisame y lo resolvemos juntos (puede
+variar el nombre exacto según la versión de Packet Tracer).
+
+### Tarea 2 — Router ISP: activar y direccionar el puerto hacia la nube (CLI)
+
+**Pasos (CLI, doble clic en Router ISP → CLI):**
+```
+enable
+configure terminal
+
+interface GigabitEthernet0/0/0
+ ip address 100.100.100.1 255.255.255.252
+ no shutdown
+ description Enlace hacia Internet (PC-EXT, vía Nube)
+exit
+
+end
+write memory
+```
+- Esta interfaz **ya existe y ya está cableada** a la nube desde Fase 1 — solo estaba apagada
+  (`shutdown`) y sin IP. No es necesario tocar `GigabitEthernet0/0/1` (esa es `200.10.10.1/30`,
+  el enlace hacia el 4331, ya configurado y andando).
+- No hace falta ninguna ruta extra en Router ISP: como las dos redes (`200.10.10.0/30` hacia el
+  4331 y `100.100.100.0/30` hacia PC-EXT) están **directamente conectadas** a sus interfaces, el
+  router ya sabe llegar a ambas solo. Esto es a propósito: así Router ISP nunca necesita conocer
+  las redes privadas internas (`192.168.x.x`) — tal cual pasaría con un ISP real, que jamás rutea
+  direcciones privadas.
+
+**Verificación:** `show ip interface brief` → `GigabitEthernet0/0/0` (`100.100.100.1`) y
+`GigabitEthernet0/0/1` (`200.10.10.1`) las dos up/up.
+
+### Tarea 3 — PC-EXT: IP fija (GUI)
+
+**Pasos:** doble clic en **PC-EXT** → **Desktop** → **IP Configuration** → **Static** →
+IP `100.100.100.2` — Máscara `255.255.255.252` — Gateway `100.100.100.1`.
+
+**Verificación:** Desktop → **Command Prompt** → `ping 100.100.100.1` → responde (Router ISP).
+
+### Tarea 4 — Router 4331: ruta por defecto hacia Router ISP (CLI)
+
+**Objetivo:** que el 4331 sepa qué hacer con cualquier paquete cuyo destino no sea una de sus redes
+conocidas (VLANs, DMZ) — mandarlo hacia Router ISP.
+**Para qué:** sin esto, cuando el WEB-SERVER le conteste a PC-EXT, el 4331 no va a saber por dónde
+sacar esa respuesta y la descarta.
+
+**Pasos (CLI, doble clic en el Router 4331 → CLI):**
+```
+enable
+configure terminal
+ip route 0.0.0.0 0.0.0.0 200.10.10.1
+end
+write memory
+```
+- `ip route 0.0.0.0 0.0.0.0 200.10.10.1`: es la **ruta por defecto** — una regla "comodín" que dice
+  "todo lo que no sepas a dónde mandar, mandalo para 200.10.10.1 (Router ISP)". Sin ella, el 4331
+  solo conoce las redes conectadas directamente a sus propias interfaces.
+
+**Verificación:** `show ip route` → debe aparecer una línea `S* 0.0.0.0/0 [1/0] via 200.10.10.1`.
+
+### Tarea 5 — Router 4331: NAT estático del WEB-SERVER (CLI)
+
+**Objetivo:** publicar `192.168.40.10` (privada, no alcanzable desde afuera) usando la IP pública
+del propio 4331 (`200.10.10.2`), solo en los puertos de HTTPS y FTP.
+**Para qué:** es el mecanismo que le permite a "Externos" llegar al server sin que la organización
+tenga que exponer su red privada directamente a Internet — el punto 4 de la consigna, fila
+"Externos".
+
+**Pasos (CLI, doble clic en el Router 4331 → CLI):**
+```
+enable
+configure terminal
+
+! Marcar de qué lado de la casa está cada interfaz (obligatorio para que el NAT funcione)
+interface GigabitEthernet0/0/1
+ ip nat inside
+exit
+
+interface GigabitEthernet0/0/2
+ ip nat outside
+exit
+
+! NAT estático: puerto 443 (HTTPS) y 20/21 (FTP) del propio 200.10.10.2 apuntan al WEB-SERVER
+ip nat inside source static tcp 192.168.40.10 443 interface GigabitEthernet0/0/2 443
+ip nat inside source static tcp 192.168.40.10 21 interface GigabitEthernet0/0/2 21
+ip nat inside source static tcp 192.168.40.10 20 interface GigabitEthernet0/0/2 20
+
+end
+write memory
+```
+- `ip nat inside` / `ip nat outside`: cada interfaz del router tiene que quedar marcada de qué lado
+  está — `inside` (red privada propia) o `outside` (hacia Internet). El NAT solo traduce
+  direcciones cuando el tráfico cruza de un lado marcado al otro. Acá solo marcamos `dmz` (por
+  donde se llega al WEB-SERVER) y `outside` — no hace falta marcar las VLANs 10/20/30 porque esta
+  regla de NAT no las involucra (eso sería para que las PCs naveguen a Internet, que es opcional y
+  no lo estamos haciendo).
+- `ip nat inside source static tcp <IP privada> <puerto> interface <interfaz outside> <puerto>`:
+  en vez de escribir la IP pública a mano, `interface GigabitEthernet0/0/2` le dice "usá la IP que
+  tenga esa interfaz en este momento" (hoy `200.10.10.2`) — así si el día de mañana cambia la IP de
+  `outside`, no hay que tocar la regla de NAT.
+- Puertos usados: `443` = HTTPS, `21` = FTP (canal de control), `20` = FTP (canal de datos, modo
+  activo). Si al final probás FTP y falla solo la transferencia del archivo (el login sí entra), es
+  la limitación de "sin inspección de protocolo" que ya vimos en `FIREWALL_LICENSE_ISSUE.md` — un
+  router con ACLs no entiende los puertos dinámicos que negocia el modo pasivo de FTP. Si pasa,
+  probá el cliente FTP en modo activo, o avisame y lo vemos juntos.
+
+**Verificación:** `show ip nat translations` (después de generar tráfico desde PC-EXT en la
+Verificación de cierre) → deben aparecer las traducciones `200.10.10.2:443 ↔ 192.168.40.10:443`, etc.
+
+### Tarea 6 — Router 4331: ACL de entrada en `outside` (CLI)
+
+**Objetivo:** que desde Internet **solo** se pueda llegar al WEB-SERVER publicado por HTTPS/FTP —
+nada más, ni siquiera ping, ni otros puertos, ni otras redes.
+**Para qué:** sin esta ACL, el NAT por sí solo no protege nada — cualquiera que sepa la IP pública
+podría intentar cualquier puerto. Esto es lo mínimo de "mínimo privilegio" para Externos que ya
+podemos aplicar ahora (la matriz completa de los otros segmentos es Fase 4).
+
+**Pasos (CLI, doble clic en el Router 4331 → CLI):**
+```
+enable
+configure terminal
+
+ip access-list extended ACL-OUTSIDE-IN
+ remark Externos: solo HTTPS y FTP hacia el WEB-SERVER publicado
+ permit tcp any host 200.10.10.2 eq 443
+ permit tcp any host 200.10.10.2 eq 21
+ permit tcp any host 200.10.10.2 eq 20
+ deny ip any any
+exit
+
+interface GigabitEthernet0/0/2
+ ip access-group ACL-OUTSIDE-IN in
+exit
+
+end
+write memory
+```
+- `ip access-list extended <NOMBRE>`: crea una ACL **nombrada** (en vez de numerada) — más fácil de
+  leer y de editar después (se puede agregar una línea sin reescribir todo).
+- `permit tcp any host 200.10.10.2 eq 443`: "dejá pasar tráfico TCP desde cualquier origen (`any`)
+  hacia el host `200.10.10.2` (la IP pública), puerto 443". Importante: se compara contra la IP
+  **pública** (`200.10.10.2`), no contra la privada del WEB-SERVER — porque esta ACL de entrada se
+  evalúa **antes** de que el router traduzca la dirección (el NAT ocurre después, al decidir para
+  dónde rutear).
+- `deny ip any any` al final: por las dudas, aunque ya existe un "deny" implícito al final de toda
+  ACL de Cisco — se lo deja explícito para que se vea clarito en `show access-lists` (ayuda para el
+  informe).
+- `ip access-group ACL-OUTSIDE-IN in`: aplica la ACL a la interfaz `outside`, en dirección
+  **entrada** (`in` = lo que llega a esa boca desde afuera). Si se pusiera `out`, filtraría lo que
+  *sale* por ahí, que no es lo que queremos.
+
+**Verificación:** `show access-lists` → debe listar las 3 líneas `permit` + el `deny ip any any`.
+
+### Tarea 7 — WEB-SERVER: activar HTTP/HTTPS/FTP (GUI)
+
+**Objetivo:** que el WEB-SERVER realmente responda por esos servicios (si están apagados, da igual
+cuán bien esté el NAT/ACL — no hay nada del otro lado que conteste).
+**Para qué:** consigna punto 4 pide que Externos pueda "subir archivos" por FTP — hace falta un
+usuario con permiso de escritura.
+
+**Pasos:** doble clic en **WEB-SERVER** → pestaña **Services**:
+1. **HTTP:** confirmá que el servicio esté **On** (y si aparece un toggle separado de HTTPS,
+   activalo también).
+2. **FTP:** activalo (**On**). Agregá un usuario nuevo, por ejemplo `externo` / `externo123`, con
+   los permisos **Write** y **Read** tildados (sin Write no va a poder subir nada).
+
+### Verificación de cierre de Fase 3
+
+| Prueba | Desde | Cómo | Resultado esperado |
+|---|---|---|---|
+| Conectividad WAN externa | PC-EXT | `ping 100.100.100.1` | Responde (Router ISP) |
+| Ruta hasta la IP pública | PC-EXT | `ping 200.10.10.2` | Puede fallar si el ICMP no está permitido en la ACL — **es esperado**, no es un error (la ACL de Externos no incluye ICMP) |
+| HTTPS al server publicado | PC-EXT | Desktop → **Web Browser** → `https://200.10.10.2` | Carga la página del WEB-SERVER |
+| FTP al server publicado | PC-EXT | Desktop → **Command Prompt** → `ftp 200.10.10.2`, login `externo`/`externo123`, `put <archivo>` | Sube el archivo OK |
+| HTTP bloqueado (para el informe) | PC-EXT | Web Browser → `http://200.10.10.2` | Debe fallar / timeout — confirma que la ACL bloquea lo no permitido |
+| Traducciones NAT | Router 4331 | `show ip nat translations` | Aparecen las sesiones de PC-EXT hacia `200.10.10.2` |
+
+La prueba de "HTTP bloqueado" es justo el tipo de captura que pide la entrega (permitido vs.
+bloqueado) — convendría sacarle screenshot a esa y a la de HTTPS/FTP exitosos para el informe final.
+
+Cuando corras esto, pasame los resultados y lo valido contra este checklist antes de pasar a Fase 4.

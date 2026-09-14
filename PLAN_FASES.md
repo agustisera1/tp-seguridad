@@ -81,6 +81,11 @@ con la consigna. Se marca lo que la cátedra **no pide**:
 | Usuarios | 30 | 192.168.30.0 /24 | 192.168.30.1 (subif Router 4331) | PC-USR1 .30.10 |
 | DMZ | — | 192.168.40.0 /24 | 192.168.40.1 (Router 4331, dmz) | WEB-SERVER .40.10 |
 | WAN | — | 200.10.10.0 /30 | ISP .1 / Router 4331 outside .2 | — |
+| Internet (prueba) | — | 100.100.100.0 /30 | Router ISP .1 | PC-EXT .2 |
+
+*(La red `100.100.100.0/30` no la da la consigna — es una subred elegida en Fase 3 solo para poder
+conectar a PC-EXT más allá del Router ISP y así probar el acceso de "Externos"; no forma parte del
+direccionamiento oficial del TP.)*
 
 El Router 4331 (IOS) no tiene security-levels: no hay default-deny implícito entre interfaces
 como en la ASA. Todo el control de acceso entre segmentos se implementa a pulso con **ACLs
@@ -120,11 +125,15 @@ se valida el "estado al terminar" antes de pasar a la siguiente.
   hacia Router ISP sigue up. Todavía sin ACLs restrictivas (eso es Fase 4).
 
 ### Fase 3 — Salida a Internet y publicación de DMZ  *(ruteo + NAT)*
-- Router ISP configurado; ruta por defecto ASA→ISP.
-- **NAT estático** para publicar el WEB-SERVER hacia `outside` (acceso de "Externos").
-- ACL de entrada en `outside` permitiendo Internet→DMZ solo HTTPS/FTP.
-- *(Opcional)* PAT para navegación interna→Internet.
-- **Estado al terminar:** PC-EXT llega al server publicado (HTTPS/FTP).
+- PC-EXT conectado vía la Nube Internet a un 2do puerto de Router ISP (red de prueba
+  `100.100.100.0/30`, ver nota en el Plan de direccionamiento).
+- Router 4331: ruta por defecto hacia Router ISP.
+- **NAT estático** (con `interface Gi0/0/2` como IP pública) para publicar el WEB-SERVER —
+  puertos 443 (HTTPS) y 20/21 (FTP).
+- ACL de entrada en `outside` permitiendo Internet→DMZ solo HTTPS/FTP (resto denegado).
+- *(Opcional, no incluido)* PAT para navegación interna→Internet.
+- **Estado al terminar:** PC-EXT llega al server publicado por HTTPS y FTP; HTTP y el resto
+  quedan bloqueados. Instructivo completo en `EJECUCION.md`.
 
 ### Fase 4 — Políticas de seguridad / ACLs con mínimo privilegio  *(consigna 4)*
 - Implementar la matriz de ACLs completa por segmento.
@@ -157,6 +166,8 @@ inter-VLAN, DMZ y acceso de Externos funcionando.
 - [x] **Fase 1** — completa (topología, IPs, VLANs/trunk en SW-LAN). **Errata:** la Tarea 4 (ASA
       `outside`/`dmz`) queda superada por la migración a Router 4331 — se rehace al arrancar
       Fase 2, ver `EJECUCION.md`.
-- [ ] **Fase 2** — migración ASA→4331 + inter-VLAN. Instructivo GUI+CLI completo en
+- [x] **Fase 2** — completa (migración ASA→4331, `outside`/`dmz`/subinterfaces VLAN10/20/30,
+      trunk SW-LAN confirmado, ping de gateway e inter-VLAN OK). Detalle en `EJECUCION.md`.
+- [ ] **Fase 3** — salida a Internet y publicación de DMZ (NAT). Instructivo GUI+CLI completo en
       `EJECUCION.md`, listo para ejecutar.
-- [ ] Fases 3 a 5.
+- [ ] Fases 4 y 5.

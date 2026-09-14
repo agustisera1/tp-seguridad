@@ -32,8 +32,8 @@ las direcciones están en `PLAN_FASES.md`.
 
 | Componente | Qué es | Para qué en el TP |
 |---|---|---|
-| **Router ISP** | Router que simula al proveedor de Internet | Borde WAN; enlaza la nube Internet con la ASA (red 200.10.10.0/30) |
-| **ASA 5505** | *Firewall* de Cisco | El corazón de seguridad: separa outside (Internet) / inside (LAN) / dmz, y aplica las ACLs |
+| **Router ISP** | Router que simula al proveedor de Internet | Borde WAN; enlaza la nube Internet con el equipo perimetral (red 200.10.10.0/30) |
+| **Router 4331** | Router de Cisco; en este proyecto hace de "firewall" | El corazón de seguridad: separa outside (Internet) / VLANs internas / dmz, y aplica las ACLs. *(El plan original usaba una ASA 5505 — se cambió por un límite de licencia, ver `FIREWALL_LICENSE_ISSUE.md`)* |
 | **Switch 2960** | Switch de capa 2 (24 bocas) | SW-LAN reparte las VLANs internas; SW-DMZ conecta el servidor |
 | **Server-PT** | Servidor genérico | El WEB-SERVER: ofrece HTTP/HTTPS/FTP a probar |
 | **PC** | Computadora cliente | Un host por segmento (Admin, Sistemas, Usuarios) + uno "Externo" en Internet |
@@ -64,13 +64,23 @@ que elige solo. Para hacerlo bien a mano:
 
 ## 4. Puertos / interfaces (cómo se llaman)
 
+- **Interfaz:** una "puerta" del equipo — cada una se conecta a una red distinta. Un router
+  necesita una interfaz por cada red a la que le da entrada/salida.
 - **FastEthernet (Fa0/1):** boca de 100 Mbps. Los switches 2960 tienen Fa0/1…Fa0/24.
-- **GigabitEthernet (Gi0/1):** boca de 1 Gbps. Los 2960 tienen Gi0/1 y Gi0/2 (suelen usarse para
-  el *uplink* / trunk hacia el router o la ASA).
-- **Ethernet0/x (ASA):** las bocas de la ASA 5505 se llaman `Ethernet0/0`, `0/1`, … Por convención
-  `Ethernet0/0` = outside y `Ethernet0/1` = inside.
-- **Subinterfaz (Gi0/1.10):** una interfaz "virtual" sobre una física, atada a una VLAN. La usa
-  la ASA para ser gateway de cada VLAN por el mismo cable (trunk).
+- **GigabitEthernet (Gi0/0/1):** boca de 1 Gbps. En el Router 4331 se llaman `GigabitEthernet0/0/0`,
+  `0/0/1`, `0/0/2` (tres números porque el router organiza los puertos por slot/bahía, no es un
+  capricho). En los switches 2960 son `Gi0/1` y `Gi0/2`, y suelen usarse para el *uplink* / trunk.
+- **SFP / módulo GLC-T:** algunas bocas Gigabit del router vienen "vacías" (son solo el hueco, sin
+  el conector de cobre soldado) y hay que ponerles un **módulo transceiver** (una pastillita que se
+  inserta, como una memoria RAM chiquita) para activarlas. `GLC-T` es el módulo que convierte esa
+  boca vacía en un puerto de cobre normal (cable de red común). Se pone con el equipo apagado.
+- **NIM (Network Interface Module):** una tarjeta que se le agrega a un router modular para sumar
+  puertos (Ethernet, seriales, etc.) que no vienen de fábrica. No se usó en este proyecto — alcanzó
+  con activar la boca SFP con un GLC-T (ver `FIREWALL_LICENSE_ISSUE.md`).
+- **Subinterfaz (Gi0/0/2.10):** una interfaz "virtual" sobre una física, atada a una VLAN. La usa
+  el router para ser gateway de cada VLAN por el mismo cable físico (un trunk).
+- *(Referencia histórica)* **Ethernet0/x (ASA):** así se llamaban las bocas en el diseño original
+  con ASA 5505 (`Ethernet0/0` = outside, `Ethernet0/1` = inside). Ya no se usa esa numeración.
 
 ---
 
@@ -86,7 +96,10 @@ que elige solo. Para hacerlo bien a mano:
 - **Máscara / CIDR (/24, /30):** define cuántas IPs entran en la red. `/24` = 254 hosts;
   `/30` = 2 hosts (ideal para enlaces punto a punto como la WAN).
 - **Inter-VLAN routing:** hacer que VLANs distintas se comuniquen. Lo hace un dispositivo de capa 3
-  (en el TP, la ASA con sus subinterfaces).
+  (en el TP, el Router 4331 con sus subinterfaces).
+- **Router-on-a-stick:** el nombre que se le da a este truco de usar **un solo cable físico** (un
+  trunk) y **subinterfaces** para que un router sea gateway de varias VLANs a la vez, en vez de
+  necesitar un cable por VLAN. "Stick" = el único palito/cable que sube desde el switch.
 - **ACL (Access Control List):** lista de reglas *permitir/denegar* tráfico según origen, destino
   y servicio. Es el núcleo de la consigna 4.
 - **Mínimo privilegio:** dar solo los permisos estrictamente necesarios; todo lo no permitido, se
@@ -96,9 +109,41 @@ que elige solo. Para hacerlo bien a mano:
 - **NAT / PAT:** traducción de direcciones. **NAT estático** publica el server privado
   (192.168.40.10) con una IP pública para que los Externos lo alcancen. **PAT** es el NAT "de
   muchos a uno" que usan las PCs para salir a Internet.
-- **security-level (ASA):** número 0–100 por interfaz. Más alto = más confiable. Por defecto el
-  tráfico va de mayor a menor nivel; de menor a mayor (Internet→DMZ) hay que permitirlo explícito.
-  En el TP: outside 0, dmz 50, inside 100.
+- **`ip nat inside` / `ip nat outside`:** en cada interfaz del router hay que marcar de qué lado
+  está: `inside` (red privada propia) o `outside` (hacia Internet). El NAT solo traduce direcciones
+  cuando el tráfico cruza de un lado marcado al otro — sin esto, `ip nat inside source static...`
+  no hace nada.
+- **Ruta por defecto (*default route*):** una regla de ruteo "comodín" (`ip route 0.0.0.0 0.0.0.0
+  <siguiente-salto>`) que le dice al router "todo lo que no sepas a dónde mandar, mandalo para
+  acá". Evita tener que escribir una ruta por cada red posible de Internet.
+- **Puerto (TCP/UDP):** un número que identifica *qué servicio* va dentro de un paquete —
+  443 = HTTPS, 80 = HTTP, 21 = FTP (control), 20 = FTP (datos), 22 = SSH. Las ACL lo usan
+  (`eq 443`) para filtrar por servicio además de por IP.
+- **Dirección de una ACL (`in` / `out`) en una interfaz:** al aplicar una ACL con
+  `ip access-group NOMBRE in` (o `out`) hay que decir si filtra lo que *entra* por esa boca o lo
+  que *sale*. Una ACL de entrada en `outside` filtra lo que llega desde Internet antes de que el
+  router decida a dónde rutearlo (y antes de que el NAT traduzca la dirección).
+- *(Referencia histórica)* **security-level (ASA):** número 0–100 por interfaz que tenía el diseño
+  original con ASA. Más alto = más confiable; por defecto el tráfico va de mayor a menor nivel. El
+  Router 4331 **no tiene esto** — no hay bloqueo automático entre interfaces, todo se permite salvo
+  que una ACL lo prohíba explícitamente (ver "ACL" arriba y el tradeoff en `FIREWALL_LICENSE_ISSUE.md`).
+- **Licencia (en un equipo Cisco):** como un plan de celular — el fabricante vende el mismo equipo
+  con distintos "paquetes" de funciones habilitadas según cuánto se paga. La ASA 5505 de este
+  proyecto viene con la licencia más básica ("Base"), que limita cuántas interfaces se pueden usar
+  a la vez. Fue la causa de tener que migrar a un router (detalle completo en
+  `FIREWALL_LICENSE_ISSUE.md`).
+- **`nameif` (comando de la ASA):** el comando que le pone nombre a una interfaz de la ASA
+  (`outside`, `dmz`, etc.) y la activa para que empiece a pasar tráfico. Sin nombre, la interfaz no
+  sirve aunque tenga IP configurada. La licencia Base limita cuántas interfaces se pueden "nombrar"
+  a la vez — de ahí el problema documentado en `FIREWALL_LICENSE_ISSUE.md`. El Router 4331 no usa
+  este comando: en un router, apenas le ponés una IP a una interfaz y la prendés (`no shutdown`),
+  ya funciona.
+- **Firewall con estado (*stateful*) vs. sin estado (*stateless*):** un firewall *stateful* (como
+  la ASA) se acuerda de las conexiones que dejó pasar y permite automáticamente la respuesta (por
+  ejemplo, si dejó salir un pedido web, deja entrar la respuesta sola, sin regla aparte). Una ACL
+  común de router es *stateless*: no se acuerda de nada, cada paquete se evalúa solo, así que a
+  veces hay que escribir reglas para el tráfico de ida *y* de vuelta. Es una de las diferencias
+  entre usar un router con ACLs y un firewall dedicado — ver `FIREWALL_LICENSE_ISSUE.md`.
 
 ---
 

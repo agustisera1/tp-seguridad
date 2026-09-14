@@ -1,9 +1,11 @@
 # CLAUDE.md — Guía para trabajar en este repo
 
 Este repositorio es el **TP1 de Seguridad (UTN)**. El objetivo es construir en Cisco Packet
-Tracer una red con firewall **ASA 5505**, salida a Internet, tres **VLANs** internas y una **DMZ**
-con servidor web, aplicando **ACLs con mínimo privilegio**, y entregar un informe. El entregable
-de red se llama **`RESOLUCION.pkt`** y se construye **desde cero**.
+Tracer una red con un equipo perimetral haciendo de firewall (ver `FIREWALL_LICENSE_ISSUE.md` para
+por qué es un **Router 4331** y no la ASA 5505 de la imagen original), salida a Internet, tres
+**VLANs** internas y una **DMZ** con servidor web, aplicando **ACLs con mínimo privilegio**, y
+entregar un informe. El entregable de red se llama **`RESOLUCION.pkt`** y se construye
+**desde cero**.
 
 ## Idioma
 Responder siempre en **español** (rioplatense, natural). El usuario y toda la documentación están
@@ -13,14 +15,23 @@ en español.
 - **`PLAN_FASES.md`** — plan maestro: fases, inventario, direccionamiento, matriz de ACLs, riesgos.
   Es la fuente de verdad del *qué* y el *en qué orden*.
 - **`GLOSARIO.md`** — glosario de componentes, conceptos y CLI básico (material para el usuario).
+  Todo término técnico nuevo que aparezca en cualquier documento **tiene que estar acá**.
+- **`FIREWALL_LICENSE_ISSUE.md`** — por qué se migró de ASA 5505 a Router 4331 (límite de
+  licencia) + el tradeoff router-vs-firewall dedicado.
 - **`CONSIGNA.pdf`** — la consigna original de la cátedra (texto + imagen de la topología objetivo).
 
 ## Modo de desarrollo (IMPORTANTE)
-El usuario es **principiante en Packet Tracer y en los CLI de Cisco/ASA**. El trabajo es
-**guiado y asistido**, nunca autónomo:
+El usuario es **principiante en Packet Tracer y en los CLI de Cisco/ASA/IOS — no sabe nada del
+tema**. El trabajo es **guiado y asistido**, nunca autónomo:
 
 - Entregar en cada paso: (a) **instrucciones concretas en la GUI de Packet Tracer** (qué
   dispositivo, qué cable, qué puerto) y (b) **configuración CLI lista para copiar/pegar**, comentada.
+- **Todo texto del proyecto va "en criollo"**: lenguaje simple, con analogías si hace falta, dando
+  por hecho que el usuario no sabe nada de redes/seguridad. Nada de jerga sin explicar en el
+  momento en que aparece.
+- **Todo término técnico usado en cualquier documento debe estar en `GLOSARIO.md`.** Si se
+  introduce un concepto nuevo (una fase nueva, un dispositivo nuevo, etc.), se agrega al glosario
+  en el mismo momento, no después.
 - **Explicar el "para qué"** de cada paso; no asumir que conoce términos (VLAN, trunk, ACL, NAT…).
 - Trabajar por **fases y revisiones**: el usuario ejecuta en PT y pide validación; recién ahí se
   avanza a la fase siguiente. **No adelantar fases ni "construir" `RESOLUCION.pkt` por cuenta propia.**
@@ -35,16 +46,19 @@ Es una cátedra universitaria: **ceñirse a la consigna**. Lo que la cátedra **
 
 ## Decisiones de diseño ya tomadas
 - Se **descartó** `clase_2.pkt` (diseño incompatible). Se parte de cero con `RESOLUCION.pkt`.
-- La **ASA 5505 hace todo**: perímetro (outside/dmz) **+ inter-VLAN** vía subinterfaces 802.1Q
-  (trunk al SW-LAN). **Contingencia (Fase 2):** si la ASA 5505 de PT no soporta trunk/subif,
-  pivotear a switch L3 / router interno; no cambia las fases 3–5.
+- **El Router 4331 hace todo** (perímetro + inter-VLAN), no la ASA 5505 de la imagen original de
+  la consigna: la ASA con licencia Base solo permite 3 interfaces con nombre en total y hacen
+  falta 5. La consigna permite el reemplazo ("1 Router Cisco 4331 / Firewall ASA"). Motivo
+  completo y en criollo: `FIREWALL_LICENSE_ISSUE.md`. Inter-VLAN vía subinterfaces 802.1Q
+  (trunk al SW-LAN), igual que se hubiera hecho en la ASA.
 
 ## Topología y direccionamiento (resumen — detalle en PLAN_FASES.md)
-- Internet → Router ISP `200.10.10.1/30` → ASA 5505 (`outside 200.10.10.2/30`, `inside` con VLANs,
-  `dmz 192.168.40.1/24`) → SW-DMZ → WEB-SERVER `192.168.40.10/24`.
+- Internet → Router ISP `200.10.10.1/30` → Router 4331 (`outside 200.10.10.2/30`, subinterfaces
+  por VLAN, `dmz 192.168.40.1/24`) → SW-DMZ → WEB-SERVER `192.168.40.10/24`.
 - VLAN 10 Admin `192.168.10.0/24` (gw .1) · VLAN 20 Sistemas `192.168.20.0/24` (gw .1) ·
   VLAN 30 Usuarios `192.168.30.0/24` (gw .1) · DMZ `192.168.40.0/24` · WAN `200.10.10.0/30`.
-- Security-levels ASA: outside 0, dmz 50, inside/VLANs 100.
+- El Router 4331 (IOS) no tiene *security-levels* como la ASA: el control de acceso entre
+  segmentos se hace 100% con ACLs extendidas por interfaz (Fase 4).
 
 ## ACLs (mínimo privilegio, destino = WEB-SERVER salvo aclaración)
 - **Administración:** HTTPS, FTP.
