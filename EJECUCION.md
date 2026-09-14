@@ -330,4 +330,256 @@ anteriores. **Fase 1 completa.**
 
 ## Fase 2 — Inter-VLAN y conectividad L3 interna
 
-*(se completa cuando arranquemos esta fase)*
+**Objetivo de la fase** (`PLAN_FASES.md`): que las 3 VLANs internas (Admin/Sistemas/Usuarios) se
+puedan comunicar entre sí y alcancen la DMZ y la ASA.
+
+**Pivot confirmado (no es más un "checkpoint", ya se decidió):** la idea original era que la ASA
+hiciera de gateway de las 3 VLANs con subinterfaces 802.1Q sobre un trunk. En Fase 1 ya vimos que
+esta ASA corre con **licencia Base**: tope de ~2 `nameif` completas + 1 restringida, **sin**
+soporte de trunk/subinterfaces (eso es una función de Security Plus). Con `outside` + `dmz` ya
+ocupando las 2 completas, no hay margen para 3 VLANs más en la ASA.
+
+**Solución:** un switch de capa 3 (**SW-L3**, modelo 3560) pasa a hacer el ruteo entre VLANs — sus
+SVIs (`interface Vlan10/20/30`) son ahora el gateway de cada segmento (mismas IPs `.1` que ya
+estaban planificadas, así que **no hay que tocar las PCs**). La ASA se queda solo con perímetro +
+DMZ, y se conecta a SW-L3 con un 3er `nameif` llamado `inside`, pero como **enlace routeado punto
+a punto** (sin trunk) sobre una red de tránsito nueva `192.168.50.0/30`.
+
+**Riesgo a validar en esta fase:** la licencia Base permite 3 VLANs (`nameif`) en total, pero la
+3ra viene con la restricción de no poder iniciar tráfico hacia **dos** interfaces distintas a la
+vez — solo hacia una. `inside` necesita hablar sí o sí con `dmz` (las VLANs acceden al
+WEB-SERVER, es el corazón de la matriz de ACLs) pero no necesita iniciar tráfico hacia `outside`
+(la navegación interna→Internet es **opcional** según el plan). Por eso se aplica
+`no forward interface outside` en `inside`: bloquea que `inside` inicie tráfico hacia `outside`,
+pero deja libre `inside`↔`dmz`. Si igual tira error de licencia, lo documentamos acá y decidimos
+alternativa (por ejemplo, restringir al revés, o repensar cuál interface queda como la "libre").
+
+- [ ] Tarea 1 — Agregar SW-L3 y recablear
+- [ ] Tarea 2 — SW-L3: VLANs, SVIs (gateways), trunk hacia SW-LAN, ruteo
+- [ ] Tarea 3 — SW-LAN: confirmar el trunk (ahora apunta a SW-L3)
+- [ ] Tarea 4 — ASA 5505: interfaz `inside` (enlace routeado hacia SW-L3)
+- [ ] Tarea 5 — Rutas estáticas (SW-L3 → ASA, ASA → VLANs internas)
+- [ ] Verificación de cierre de Fase 2
+
+### Tarea 1 — Agregar SW-L3 y recablear
+
+**Objetivo:** sumar el switch que va a hacer inter-VLAN y acomodar el cableado: el trunk que
+armaste en Fase 1 (SW-LAN → ASA) pasa a ir de SW-LAN → SW-L3, y agregás un cable nuevo
+SW-L3 → ASA.
+
+**Para qué:** es el cambio físico que habilita el pivot — sin este paso, los comandos de las
+tareas siguientes no tienen dónde aplicarse.
+
+**Pasos (GUI):**
+1. Del panel de dispositivos (abajo a la izquierda), categoría **Switches**, arrastrá al lienzo un
+   **3560** (soporta rutear, a diferencia del 2960 de SW-LAN/SW-DMZ). Nombralo mentalmente "SW-L3"
+   (el hostname real se lo ponemos por CLI en la Tarea 2).
+2. Ubicalo entre SW-LAN y la ASA en el lienzo (no importa la posición exacta, solo prolijidad).
+3. **Desconectá** el cable que hoy va de SW-LAN (el puerto trunk que configuraste en Fase 1
+   Tarea 5, ej. `GigabitEthernet0/1`) a la ASA. Click en el cable → aparece opción de eliminarlo,
+   o simplemente click en el conector **Delete** (tijera) de la barra de herramientas y click en
+   el cable.
+4. Conectá un cable **Copper Straight-Through** desde ese mismo puerto de SW-LAN hasta un puerto
+   de SW-L3 (ej. `GigabitEthernet0/1`).
+5. Conectá otro cable **Copper Straight-Through** desde otro puerto de SW-L3 (ej.
+   `GigabitEthernet0/2`) hasta el puerto de la ASA que había quedado libre desde Fase 1 (el que en
+   su momento pensábamos usar para el trunk directo, ej. `Ethernet0/2`).
+
+**Verificación:** los tres cables (SW-LAN↔SW-L3, SW-L3↔ASA, y los que ya existían) deberían verse
+con puntos verdes o ámbar parpadeante (todavía no van a estar 100% up hasta que configures los
+puertos en las tareas siguientes — es normal).
+
+### Tarea 2 — SW-L3: VLANs, SVIs (gateways), trunk hacia SW-LAN, ruteo
+
+**Objetivo:** crear las VLANs 10/20/30 en SW-L3 (tienen que existir localmente para que las SVIs
+funcionen), darles IP a las SVIs (van a ser el gateway de cada VLAN), habilitar el trunk hacia
+SW-LAN, prender el ruteo entre VLANs, y dejar el puerto hacia la ASA como **routeado** (no
+switchport) con la IP de tránsito.
+
+**Para qué:** las SVIs (`interface Vlan10`, etc.) son interfaces virtuales que le dan IP a una
+VLAN dentro del switch — es lo que convierte a un switch normal en "capa 3". `ip routing` es el
+comando que prende el ruteo entre esas VLANs (sin él, el switch solo haría switching, no rutearía
+entre redes distintas aunque tengan SVIs). El puerto hacia la ASA se pone `no switchport` porque
+ahí no va tráfico de switch (VLANs), va un enlace ruteado punto a punto como si fuera un router.
+
+**Pasos (CLI, doble clic en SW-L3 → CLI):**
+```
+enable
+configure terminal
+hostname SW-L3
+ip routing
+
+vlan 10
+ name ADMINISTRACION
+exit
+vlan 20
+ name SISTEMAS
+exit
+vlan 30
+ name USUARIOS
+exit
+
+! Gateway de Administración
+interface Vlan10
+ ip address 192.168.10.1 255.255.255.0
+ no shutdown
+exit
+
+! Gateway de Sistemas
+interface Vlan20
+ ip address 192.168.20.1 255.255.255.0
+ no shutdown
+exit
+
+! Gateway de Usuarios
+interface Vlan30
+ ip address 192.168.30.1 255.255.255.0
+ no shutdown
+exit
+
+! Reemplazá GigabitEthernet0/1 por el puerto real hacia SW-LAN
+interface GigabitEthernet0/1
+ switchport trunk encapsulation dot1q
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30
+ no shutdown
+ description Trunk hacia SW-LAN
+exit
+
+! Reemplazá GigabitEthernet0/2 por el puerto real hacia la ASA — enlace routeado, NO switchport
+interface GigabitEthernet0/2
+ no switchport
+ ip address 192.168.50.2 255.255.255.252
+ no shutdown
+ description Enlace routeado hacia ASA (inside)
+exit
+
+end
+write memory
+```
+- Si `switchport trunk encapsulation dot1q` tira error en el 3560 (algunos modelos ya vienen fijos
+  en dot1q), seguí directo con `switchport mode trunk`, no es un problema — misma nota que en
+  Fase 1.
+- `no switchport`: convierte un puerto físico de "puerto de switch" a "puerto routeado" — recién
+  ahí acepta una IP directamente, como si fuera la interfaz de un router.
+
+**Verificación:**
+- `show vlan brief` → VLANs 10/20/30 creadas.
+- `show ip interface brief` → `Vlan10/20/30` y `GigabitEthernet0/2` deben figurar `up/up` con sus IPs.
+- `show interfaces trunk` → el puerto hacia SW-LAN en modo trunk, VLANs 10,20,30 permitidas.
+
+### Tarea 3 — SW-LAN: confirmar el trunk (ahora apunta a SW-L3)
+
+**Objetivo:** no hay cambios de configuración — el trunk que ya armaste en Fase 1 Tarea 5 sigue
+sirviendo tal cual, porque solo cambió el cable de destino (ahora va a SW-L3 en vez de a la ASA).
+Esta tarea es solo de **verificación**.
+
+**Para qué:** confirmar que el recableado de la Tarea 1 no rompió nada y que el trunk sigue activo
+contra el nuevo vecino.
+
+**Pasos:** ninguno (no hace falta tocar CLI en SW-LAN).
+
+**Verificación (CLI, doble clic en SW-LAN → CLI):**
+- `show interfaces trunk` → el puerto hacia SW-L3 (mismo puerto de siempre) debe seguir en modo
+  trunk con VLANs 10,20,30 permitidas.
+- `show vlan brief` → los puertos de las PCs siguen en sus VLANs de Fase 1.
+
+### Tarea 4 — ASA 5505: interfaz `inside` (enlace routeado hacia SW-L3)
+
+**Objetivo:** configurar el 3er `nameif` de la ASA, `inside`, como enlace punto a punto hacia
+SW-L3 (sin trunk), con la restricción de licencia aplicada preventivamente.
+
+**Para qué:** es el único punto de contacto entre las VLANs internas y el resto de la red (DMZ y
+outside) — todo el tráfico inter-segmento pasa filtrado por acá (más adelante, en Fase 4, con
+ACLs de mínimo privilegio).
+
+**Pasos (CLI, doble clic en ASA → CLI):**
+```
+enable
+configure terminal
+
+! ---- inside: hacia SW-L3 (enlace routeado, sin trunk) ----
+interface Vlan1
+ nameif inside
+ security-level 100
+ ip address 192.168.50.1 255.255.255.252
+ no forward interface outside
+ no shutdown
+exit
+
+! Reemplazá Ethernet0/2 por el puerto real conectado a SW-L3
+interface Ethernet0/2
+ switchport access vlan 1
+ no shutdown
+exit
+
+end
+write memory
+```
+- `security-level 100`: la interfaz más confiable (la LAN interna), igual que en el diseño
+  original.
+- `no forward interface outside`: es la mitigación de licencia explicada arriba — `inside` puede
+  iniciar tráfico hacia `dmz` (necesario) pero no hacia `outside` (opcional). Si al pegar este
+  comando la ASA tira error de licencia igual, avisame con el mensaje exacto y lo resolvemos acá
+  antes de seguir.
+- `interface Vlan1`: es la VLAN que liberamos en Fase 1 Tarea 4 (`no nameif` / `no ip address`) —
+  ahora la reutilizamos para `inside`, pero como enlace simple (no trunk).
+
+**Verificación:**
+- `show interface ip brief` → `inside` debe figurar `up` con `192.168.50.1`.
+- Desde la ASA: `ping inside 192.168.50.2` → debe responder (SW-L3, una vez tenga su lado
+  configurado en la Tarea 2).
+
+### Tarea 5 — Rutas estáticas (SW-L3 → ASA, ASA → VLANs internas)
+
+**Objetivo:** decirle a cada lado del enlace de tránsito cómo llegar a las redes que están "del
+otro lado" y que no conoce directamente.
+
+**Para qué:** tener las interfaces con IP no alcanza — sin rutas, SW-L3 no sabe cómo llegar a la
+DMZ/outside, y la ASA no sabe cómo llegar a las VLANs 10/20/30 (que están un salto más allá de
+SW-L3, no conectadas directo a la ASA).
+
+**Pasos — en SW-L3 (CLI):**
+```
+enable
+configure terminal
+! Todo lo que no sea 10/20/30 (o sea, DMZ, outside, Internet) se manda a la ASA
+ip route 0.0.0.0 0.0.0.0 192.168.50.1
+end
+write memory
+```
+
+**Pasos — en la ASA (CLI):**
+```
+enable
+configure terminal
+route inside 192.168.10.0 255.255.255.0 192.168.50.2
+route inside 192.168.20.0 255.255.255.0 192.168.50.2
+route inside 192.168.30.0 255.255.255.0 192.168.50.2
+end
+write memory
+```
+- En SW-L3 alcanza con una ruta por defecto (`0.0.0.0/0`) porque todo lo que no es una VLAN local
+  vive "para el lado de la ASA".
+- En la ASA hace falta una ruta por cada red VLAN porque no hay una ruta por defecto genérica hacia
+  `inside` (la ruta por defecto de la ASA, si existe, va a apuntar hacia `outside`/Internet, no
+  hacia adentro).
+
+**Verificación:**
+- SW-L3: `show ip route` → debe aparecer `S* 0.0.0.0/0 [1/0] via 192.168.50.1`.
+- ASA: `show route` → deben aparecer las 3 rutas estáticas hacia `.10.0/.20.0/.30.0` vía `inside`.
+
+### Verificación de cierre de Fase 2
+
+| Prueba | Desde | Comando | Resultado esperado |
+|---|---|---|---|
+| PC a su gateway | PC-ADM1 (y SIS1/USR1) | `ping 192.168.10.1` (o `.20.1`/`.30.1`) | Responde (SVI en SW-L3) |
+| Inter-VLAN | PC-ADM1 | `ping 192.168.20.10` (PC-SIS1) | Responde |
+| VLAN a DMZ | PC-ADM1 (o cualquiera) | `ping 192.168.40.10` (WEB-SERVER) | Responde |
+| SW-L3 a ASA inside | SW-L3 | `ping 192.168.50.1` | Responde |
+| ASA inside a SW-L3 | ASA | `ping inside 192.168.50.2` | Responde |
+| Rutas en SW-L3 | SW-L3 | `show ip route` | Default route vía `.50.1` |
+| Rutas en ASA | ASA | `show route` | 3 rutas estáticas vía `.50.2` |
+
+Cuando tengas esto corrido, pasame los resultados (capturas o texto de los comandos) y lo valido
+antes de pasar a Fase 3.
