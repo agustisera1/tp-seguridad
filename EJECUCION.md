@@ -484,38 +484,57 @@ presentes (Router ISP y Router 4331) — no se agrega hardware de red nuevo.
 (Externos → DMZ), que es lo mínimo para no dejar el NAT abierto a cualquier puerto. La matriz
 completa de ACL para Administración/Sistemas/Usuarios es Fase 4.
 
-- [ ] Tarea 1 — PC-EXT: cablear a la Nube Internet + 2do puerto en Router ISP (GUI)
-- [ ] Tarea 2 — Router ISP: IP en el puerto nuevo hacia la Nube (CLI)
-- [ ] Tarea 3 — PC-EXT: IP fija (GUI)
-- [ ] Tarea 4 — Router 4331: ruta por defecto hacia Router ISP (CLI)
-- [ ] Tarea 5 — Router 4331: NAT estático del WEB-SERVER (CLI)
-- [ ] Tarea 6 — Router 4331: ACL de entrada en `outside` (CLI)
-- [ ] Tarea 7 — WEB-SERVER: activar HTTP/HTTPS/FTP (GUI)
-- [ ] Verificación de cierre de Fase 3
+- [x] Tarea 1 — PC-EXT: cablear hasta la Nube Internet vía un modem DSL (GUI)
+- [x] Tarea 2 — Router ISP: IP en el puerto hacia la Nube (CLI)
+- [x] Tarea 3 — PC-EXT: IP fija (GUI)
+- [x] Tarea 4 — Router 4331: ruta por defecto hacia Router ISP (CLI)
+- [x] Tarea 5 — Router 4331: NAT estático del WEB-SERVER (CLI)
+- [x] Tarea 6 — Router 4331: ACL de entrada en `outside` (CLI)
+- [x] Tarea 7 — WEB-SERVER: activar HTTP/HTTPS/FTP (GUI)
+- [x] Verificación de cierre de Fase 3
 
-### Tarea 1 — PC-EXT: cablear a la Nube Internet que ya existe (GUI)
+### Tarea 1 — PC-EXT: cablear hasta la Nube Internet vía un modem DSL (GUI)
 
-**Objetivo:** colgar PC-EXT de la Nube "INTERNET" que **ya está** en la topología (viene de Fase 1,
-cableada a `Router ISP:GigabitEthernet0/0/0` — hoy esa interfaz está apagada y sin IP, verificado
-en el `.pkt`).
-**Para qué:** no hace falta agregar ningún puerto nuevo en Router ISP — ya tiene uno cableado hacia
-la nube, solo estaba sin usar. Nos ahorramos un paso.
+**Objetivo:** colgar PC-EXT "más allá" de la Nube "INTERNET" que **ya está** en la topología (viene
+de Fase 1, cableada a `Router ISP:GigabitEthernet0/0/0` por su puerto `Ethernet6`).
+**Para qué:** simular un cliente fuera de la organización que solo puede llegar al WEB-SERVER
+publicado por HTTPS/FTP — hace falta tráfico real (no alcanza un ping) para las capturas de
+"accesos permitidos y bloqueados" que pide la entrega.
+
+**Intento fallido (queda documentado para no repetirlo):** agregarle a la Nube un segundo módulo
+Ethernet (`PT-CLOUD-NM-1CFE` → puerto `FastEthernet8`) y buscar un "Port Mapping" genérico
+Ethernet↔Ethernet en `Config`. **Esa función no existe en Packet Tracer.** Se probó también con una
+Nube `PT-Empty` armada desde cero y pasa lo mismo. El `Cloud-PT` solo sabe *traducir* un puerto de
+tecnología WAN (Modem → DSL, Coaxial → Cable, Serial → Frame Relay) hacia un puerto Ethernet — nunca
+puentea dos puertos Ethernet entre sí directamente. Cada puerto Ethernet de la nube es el "lado
+cliente" de una de esas tecnologías, no un puerto de switch genérico. Confirmado contra la
+documentación oficial de Packet Tracer Tutorials y foros de Cisco Community (referencias al pie).
+
+**Solución que funciona:** agregar un dispositivo **DSL-Modem-PT** real entre PC-EXT y la Nube, y
+activar el mapeo DSL↔Ethernet que la propia Nube ya sugiere por defecto.
 
 **Pasos:**
-1. Doble clic en la **Nube "INTERNET"** → pestaña **Physical**. Fijate si le queda algún puerto
-   Ethernet libre además del que ya usa hacia Router ISP (`Ethernet6`). Si no, mismo procedimiento
-   que con el 4331: apagala, agregá un módulo Ethernet de la lista de la izquierda (por ejemplo
-   `PT-CLOUD-NM-1CFE`), prendela de nuevo.
-2. Doble clic en la Nube → pestaña **Config**. Buscá la sección de mapeo de puertos (puede
-   llamarse "Port Mapping" o similar, según tu versión de PT) y agregá una asociación entre el
-   puerto que ya va a Router ISP (`Ethernet6`) y el puerto nuevo que vas a usar para PC-EXT (por
-   ejemplo `Ethernet7`). Sin este mapeo, la nube no reenvía tráfico entre esos dos puertos aunque
-   estén cableados.
-3. Arrastrá un **PC** nuevo al lienzo, llamalo **PC-EXT**.
-4. Cableá con **Copper Straight-Through**: PC-EXT ↔ el puerto nuevo de la Nube (`Ethernet7`).
+1. (Si habías hecho el intento fallido) Borrá el cable PC-EXT↔`FastEthernet8` y, si querés
+   prolijidad, apagá la Nube y sacale ese módulo — ya no se usa.
+2. Arrastrá un **PC** nuevo al lienzo, llamalo **PC-EXT** (si todavía no lo habías creado).
+3. Panel de dispositivos → **Network Devices → WAN Emulation** → arrastrá un **DSL-Modem-PT** al
+   lienzo, cerca de PC-EXT.
+4. Cableá **PC-EXT ↔ DSL-Modem-PT** con **Copper Straight-Through** (puerto Ethernet del modem,
+   confirmá el nombre real pasando el mouse sobre el cable).
+5. Cableá **DSL-Modem-PT ↔ Nube "INTERNET"**, puerto `Modem4` de la Nube. Si **Copper** no engancha
+   (es un puerto de línea telefónica, no RJ45), usá el cable tipo **Phone** de la paleta de
+   Connections.
+6. Doble clic en la Nube → **Config → CONNECTIONS → DSL**. Los desplegables ya muestran por
+   defecto `Modem4 <-> Ethernet6` (el lado que va a PC-EXT vía el modem, y el que ya va a Router
+   ISP) — con esos dos valores seleccionados, tocá **Add**. Debe aparecer una fila nueva en la
+   tabla `From Port / To Port`: esa fila es la que activa el puente DSL↔Ethernet dentro de la Nube.
 
-Si en el paso 2 no encontrás la sección de mapeo de puertos, avisame y lo resolvemos juntos (puede
-variar el nombre exacto según la versión de Packet Tracer).
+**Verificación:** con Router ISP y PC-EXT ya direccionados (Tareas 2 y 3), `ping 100.100.100.1`
+desde PC-EXT responde. **Confirmado, Tarea 1 cerrada.**
+
+**Referencias:** [Packet Tracer Tutorials — Devices and Modules](https://tutorials.ptnetacad.net/help/default/devicesAndModules_others.htm),
+[Cisco Community — Emulate Internet with PT-Cloud](https://community.cisco.com/t5/vpn/emulate-internet-with-pt-cloud-in-packet-tracer/td-p/1563991),
+[Cisco Community — Cable port mapping](https://community.cisco.com/t5/online-tools-and-resources/create-a-simple-network-using-packet-tracer-cannot-add-second/m-p/4522965/highlight/true).
 
 ### Tarea 2 — Router ISP: activar y direccionar el puerto hacia la nube (CLI)
 
@@ -552,6 +571,9 @@ IP `100.100.100.2` — Máscara `255.255.255.252` — Gateway `100.100.100.1`.
 
 **Verificación:** Desktop → **Command Prompt** → `ping 100.100.100.1` → responde (Router ISP).
 
+**Confirmado:** ping OK una vez armado el circuito PC-EXT → DSL-Modem-PT → Nube (mapeo DSL) →
+Router ISP de la Tarea 1. **Tareas 1, 2 y 3 cerradas.**
+
 ### Tarea 4 — Router 4331: ruta por defecto hacia Router ISP (CLI)
 
 **Objetivo:** que el 4331 sepa qué hacer con cualquier paquete cuyo destino no sea una de sus redes
@@ -572,6 +594,9 @@ write memory
   solo conoce las redes conectadas directamente a sus propias interfaces.
 
 **Verificación:** `show ip route` → debe aparecer una línea `S* 0.0.0.0/0 [1/0] via 200.10.10.1`.
+
+**Confirmado:** `show ip route` en R-PERIMETRO muestra `Gateway of last resort is 200.10.10.1 to
+network 0.0.0.0`. **Tarea 4 cerrada.**
 
 ### Tarea 5 — Router 4331: NAT estático del WEB-SERVER (CLI)
 
@@ -596,9 +621,9 @@ interface GigabitEthernet0/0/2
 exit
 
 ! NAT estático: puerto 443 (HTTPS) y 20/21 (FTP) del propio 200.10.10.2 apuntan al WEB-SERVER
-ip nat inside source static tcp 192.168.40.10 443 interface GigabitEthernet0/0/2 443
-ip nat inside source static tcp 192.168.40.10 21 interface GigabitEthernet0/0/2 21
-ip nat inside source static tcp 192.168.40.10 20 interface GigabitEthernet0/0/2 20
+ip nat inside source static tcp 192.168.40.10 443 200.10.10.2 443
+ip nat inside source static tcp 192.168.40.10 21 200.10.10.2 21
+ip nat inside source static tcp 192.168.40.10 20 200.10.10.2 20
 
 end
 write memory
@@ -609,10 +634,11 @@ write memory
   donde se llega al WEB-SERVER) y `outside` — no hace falta marcar las VLANs 10/20/30 porque esta
   regla de NAT no las involucra (eso sería para que las PCs naveguen a Internet, que es opcional y
   no lo estamos haciendo).
-- `ip nat inside source static tcp <IP privada> <puerto> interface <interfaz outside> <puerto>`:
-  en vez de escribir la IP pública a mano, `interface GigabitEthernet0/0/2` le dice "usá la IP que
-  tenga esa interfaz en este momento" (hoy `200.10.10.2`) — así si el día de mañana cambia la IP de
-  `outside`, no hay que tocar la regla de NAT.
+- `ip nat inside source static tcp <IP privada> <puerto> <IP pública> <puerto>`: la IP pública va
+  escrita a mano (`200.10.10.2`). *(Nota: la sintaxis real de Cisco IOS admite reemplazar la IP
+  pública por `interface GigabitEthernet0/0/2` para que tome automáticamente la IP vigente de esa
+  interfaz — pero el IOS simulado de Packet Tracer no la soporta, tira `Invalid input`. Por eso acá
+  va la IP fija; si algún día cambiara la IP de `outside` habría que actualizar esta regla a mano.)*
 - Puertos usados: `443` = HTTPS, `21` = FTP (canal de control), `20` = FTP (canal de datos, modo
   activo). Si al final probás FTP y falla solo la transferencia del archivo (el login sí entra), es
   la limitación de "sin inspección de protocolo" que ya vimos en `FIREWALL_LICENSE_ISSUE.md` — un
@@ -621,6 +647,9 @@ write memory
 
 **Verificación:** `show ip nat translations` (después de generar tráfico desde PC-EXT en la
 Verificación de cierre) → deben aparecer las traducciones `200.10.10.2:443 ↔ 192.168.40.10:443`, etc.
+
+**Confirmado:** `show ip nat translations` muestra las 3 traducciones (`20`, `21`, `443`) apuntando
+a `192.168.40.10`. **Tarea 5 cerrada.**
 
 ### Tarea 6 — Router 4331: ACL de entrada en `outside` (CLI)
 
@@ -666,6 +695,9 @@ write memory
 
 **Verificación:** `show access-lists` → debe listar las 3 líneas `permit` + el `deny ip any any`.
 
+**Confirmado:** `show access-lists` muestra las 3 `permit` (443, ftp/21, 20) + `deny ip any any`.
+**Tarea 6 cerrada.**
+
 ### Tarea 7 — WEB-SERVER: activar HTTP/HTTPS/FTP (GUI)
 
 **Objetivo:** que el WEB-SERVER realmente responda por esos servicios (si están apagados, da igual
@@ -693,4 +725,7 @@ usuario con permiso de escritura.
 La prueba de "HTTP bloqueado" es justo el tipo de captura que pide la entrega (permitido vs.
 bloqueado) — convendría sacarle screenshot a esa y a la de HTTPS/FTP exitosos para el informe final.
 
-Cuando corras esto, pasame los resultados y lo valido contra este checklist antes de pasar a Fase 4.
+**Confirmado (2026-09-15):** Tareas 1-7 hechas y verificadas paso a paso durante la sesión (NAT y
+ACL con salida real chequeada — ver Tareas 5 y 6). El usuario confirmó que el resto de la batería
+de esta tabla también pasó; las capturas/logs puntuales de cada fila se van a tomar todos juntos
+más adelante (para el informe final de Fase 5), no hace falta repetirlos ahora. **Fase 3 completa.**

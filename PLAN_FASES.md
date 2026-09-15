@@ -168,6 +168,12 @@ inter-VLAN, DMZ y acceso de Externos funcionando.
       Fase 2, ver `EJECUCION.md`.
 - [x] **Fase 2** — completa (migración ASA→4331, `outside`/`dmz`/subinterfaces VLAN10/20/30,
       trunk SW-LAN confirmado, ping de gateway e inter-VLAN OK). Detalle en `EJECUCION.md`.
-- [ ] **Fase 3** — salida a Internet y publicación de DMZ (NAT). Instructivo GUI+CLI completo en
-      `EJECUCION.md`, listo para ejecutar.
-- [ ] Fases 4 y 5.
+- [x] **Fase 3** — completa (PC-EXT llega vía DSL-Modem-PT + Nube a Router ISP; ruta por defecto,
+      NAT estático y ACL de entrada en el Router 4331; servicios activados en WEB-SERVER). Detalle
+      y troubleshooting en `EJECUCION.md`.
+- [ ] **Fase 4** — políticas de seguridad / ACLs con mínimo privilegio (consigna 4 completa). **No
+      es opcional** — es núcleo de la consigna.
+- [ ] **Fase 5** — análisis de dispositivos adicionales (consigna 5) + batería de pruebas con
+      capturas + informe PDF + entrega. **No es opcional** en su conjunto; dentro de ella, el
+      *hardening* (SSH admin, claves cifradas, banner) sí es opcional (ver tabla de alineación
+      arriba).

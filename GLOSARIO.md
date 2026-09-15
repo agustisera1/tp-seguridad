@@ -37,7 +37,8 @@ las direcciones están en `PLAN_FASES.md`.
 | **Switch 2960** | Switch de capa 2 (24 bocas) | SW-LAN reparte las VLANs internas; SW-DMZ conecta el servidor |
 | **Server-PT** | Servidor genérico | El WEB-SERVER: ofrece HTTP/HTTPS/FTP a probar |
 | **PC** | Computadora cliente | Un host por segmento (Admin, Sistemas, Usuarios) + uno "Externo" en Internet |
-| **Nube (Cloud)** | Representa Internet | Extremo remoto; de ahí "vienen" los Externos |
+| **Nube (Cloud-PT)** | Representa Internet | Extremo remoto; de ahí "vienen" los Externos. **Ojo:** sus puertos Ethernet no se puentean entre sí directamente — ver "Mapeo de puertos en la Nube" más abajo |
+| **DSL-Modem-PT** | Modem DSL simulado | Dispositivo intermedio para colgar a PC-EXT de la Nube (ver Fase 3, Tarea 1): un lado Ethernet hacia el PC, un lado "línea" hacia la Nube |
 
 > **Nota sobre nombres:** en la imagen los equipos se llaman PC-ADM1, PC-SIS1, PC-USR1,
 > SW-LAN, SW-DMZ, WEB-SERVER. Conviene renombrarlos igual (doble clic → pestaña Config → Display Name).
@@ -119,6 +120,12 @@ que elige solo. Para hacerlo bien a mano:
 - **Puerto (TCP/UDP):** un número que identifica *qué servicio* va dentro de un paquete —
   443 = HTTPS, 80 = HTTP, 21 = FTP (control), 20 = FTP (datos), 22 = SSH. Las ACL lo usan
   (`eq 443`) para filtrar por servicio además de por IP.
+- **Mapeo de puertos en la Nube (Cloud-PT):** dentro de la Nube, `Config → Connections` (Frame
+  Relay / DSL / Cable) sirve para *traducir* un puerto de tecnología WAN (Modem, Coaxial, Serial)
+  hacia un puerto Ethernet — nunca para unir dos puertos Ethernet entre sí directamente. Por eso
+  para colgar a PC-EXT de la Nube hizo falta un **DSL-Modem-PT** de por medio (PC-EXT → modem →
+  puerto `Modem4` de la Nube, con el mapeo `Modem4 <-> Ethernet6` agregado en la pestaña DSL) en
+  vez de un segundo puerto Ethernet suelto. Detalle completo en `EJECUCION.md` (Fase 3, Tarea 1).
 - **Dirección de una ACL (`in` / `out`) en una interfaz:** al aplicar una ACL con
   `ip access-group NOMBRE in` (o `out`) hay que decir si filtra lo que *entra* por esa boca o lo
   que *sale*. Una ACL de entrada en `outside` filtra lo que llega desde Internet antes de que el
