@@ -103,6 +103,14 @@ que elige solo. Para hacerlo bien a mano:
   necesitar un cable por VLAN. "Stick" = el único palito/cable que sube desde el switch.
 - **ACL (Access Control List):** lista de reglas *permitir/denegar* tráfico según origen, destino
   y servicio. Es el núcleo de la consigna 4.
+- **Máscara wildcard (wildcard mask):** la máscara "invertida" que usan las ACLs de Cisco para
+  indicar un rango de IPs de origen/destino, en vez de la máscara de subred normal. Donde la
+  máscara normal tiene un bit en `1` (esa parte tiene que coincidir exacto), la wildcard tiene `0`;
+  donde la máscara normal tiene `0` (cualquier valor sirve), la wildcard tiene `255`. Para la red
+  `192.168.10.0/24` (máscara `255.255.255.0`) la wildcard es `0.0.0.255`. Ejemplo de este TP:
+  `permit tcp 192.168.10.0 0.0.0.255 host 192.168.40.10 eq 443` = "cualquier host de la red
+  192.168.10.0/24 (Administración) hacia el WEB-SERVER, puerto 443". Es distinto del `host <IP>`
+  (una sola IP exacta) y de `any` (cualquier IP), que ya se usaron en la ACL de Fase 3.
 - **Mínimo privilegio:** dar solo los permisos estrictamente necesarios; todo lo no permitido, se
   niega. Las ACL terminan con un "deny" implícito que ayuda a esto.
 - **DMZ (zona desmilitarizada):** red intermedia donde se ponen los servidores accesibles desde
@@ -145,6 +153,18 @@ que elige solo. Para hacerlo bien a mano:
   a la vez — de ahí el problema documentado en `FIREWALL_LICENSE_ISSUE.md`. El Router 4331 no usa
   este comando: en un router, apenas le ponés una IP a una interfaz y la prendés (`no shutdown`),
   ya funciona.
+- **`established` (palabra clave de ACL, solo TCP):** en una regla `permit tcp ... established`,
+  el router deja pasar el paquete solo si tiene los bits `ACK` o `RST` prendidos — es decir, solo si
+  es **parte de una conexión que ya empezó del otro lado**, nunca el primer paquete (`SYN`) de una
+  conexión nueva. Es el truco para que una ACL sin estado deje volver la respuesta de un tráfico
+  permitido en la otra ACL, sin abrir la posibilidad de iniciar conexiones nuevas en ese sentido.
+  Se usó en Fase 4 para que las respuestas de Administración/Usuarios lleguen de vuelta a Sistemas
+  sin darles a Administración/Usuarios permiso para iniciar tráfico hacia Sistemas.
+- **Tipo de mensaje ICMP (`echo-reply` vs `echo-request`):** un `ping` en realidad son dos mensajes
+  ICMP distintos: el que sale (`echo-request`) y el que contesta (`echo-reply`). Una ACL puede
+  permitir uno sin el otro — `permit icmp <red> <red> echo-reply` deja volver solo la *respuesta*
+  de un ping ajeno, sin permitir que esa red *inicie* un ping nuevo hacia el otro lado. Mismo
+  criterio que `established` para TCP, pero aplicado a ICMP.
 - **Firewall con estado (*stateful*) vs. sin estado (*stateless*):** un firewall *stateful* (como
   la ASA) se acuerda de las conexiones que dejó pasar y permite automáticamente la respuesta (por
   ejemplo, si dejó salir un pedido web, deja entrar la respuesta sola, sin regla aparte). Una ACL

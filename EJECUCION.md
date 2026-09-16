@@ -729,3 +729,208 @@ bloqueado) — convendría sacarle screenshot a esa y a la de HTTPS/FTP exitosos
 ACL con salida real chequeada — ver Tareas 5 y 6). El usuario confirmó que el resto de la batería
 de esta tabla también pasó; las capturas/logs puntuales de cada fila se van a tomar todos juntos
 más adelante (para el informe final de Fase 5), no hace falta repetirlos ahora. **Fase 3 completa.**
+
+---
+
+## Fase 4 — Políticas de seguridad / ACLs con mínimo privilegio
+
+**Objetivo de la fase** (`PLAN_FASES.md`): aplicar la matriz completa de ACLs por segmento
+(Administración, Sistemas, Usuarios) contra el WEB-SERVER, con **mínimo privilegio** — cada
+segmento solo puede usar los servicios que le corresponden, todo lo demás queda bloqueado.
+**Estado al cierre:** la matriz permitido/bloqueado se comporta según la tabla de `PLAN_FASES.md`
+(p.ej. HTTPS OK y HTTP bloqueado para Usuarios).
+
+**Recordatorio de la matriz (`PLAN_FASES.md`):**
+
+| Origen | Permitido (hacia WEB-SERVER salvo aclaración) | Denegado |
+|---|---|---|
+| Administración (VLAN10) | HTTPS, FTP | todo lo demás |
+| Usuarios (VLAN30) | HTTPS | todo lo demás |
+| Sistemas (VLAN20) | HTTPS, HTTP, FTP, SSH, ICMP **+ redes Usuarios y Admin** | todo lo demás |
+| Externos (Internet) | HTTPS, FTP (ya resuelto en Fase 3, `ACL-OUTSIDE-IN`) | todo lo demás |
+
+**Nota de alcance — decisión sobre SSH (riesgo abierto en `PLAN_FASES.md`):** el Server-PT de
+Packet Tracer no ofrece servidor SSH real, así que la regla "Sistemas → SSH" no se puede probar
+*funcionalmente* contra el WEB-SERVER. Se resuelve **a nivel ACL únicamente**: se agrega el
+`permit` para el puerto 22 (queda la regla correcta y demostrable con `show access-lists`), sin
+agregar hardware nuevo a la topología — no lo pide la consigna y ya hay una nota en la memoria del
+proyecto para no sumar dispositivos fuera de lo pedido. Esto se va a aclarar en el informe final
+(Fase 5) como limitación conocida del simulador, no de la configuración.
+
+**Consecuencia esperada (a propósito):** después de esta fase, Administración y Usuarios **dejan
+de poder pingear ni acceder a nada fuera de HTTPS/FTP contra el WEB-SERVER** — ni siquiera a su
+propio gateway por ICMP, ni a las otras VLANs (el `ping` inter-VLAN que validamos en Fase 2 para
+Admin/Usuarios se bloquea ahora a propósito). Solo Sistemas conserva ICMP y acceso completo a las
+redes de Admin y Usuarios, tal cual pide la matriz. Para probar "permitido/bloqueado" en
+Admin/Usuarios usá el navegador o FTP, no `ping` (el `ping` da bloqueado siempre para esos dos,
+es lo esperado).
+
+- [x] Tarea 1 — Router 4331: crear las 3 ACLs extendidas nombradas (CLI)
+- [x] Tarea 2 — Router 4331: aplicar cada ACL en la subinterfaz correspondiente (CLI)
+- [x] Verificación de cierre de Fase 4
+
+### Tarea 1 — Router 4331: crear las 3 ACLs extendidas nombradas (CLI)
+
+**Objetivo:** una ACL por VLAN interna, con las reglas de la matriz.
+**Para qué:** cada ACL es la traducción directa de una fila de la matriz a reglas que el router
+puede evaluar. Al ser **nombradas** (no numeradas) se pueden releer y editar fácil — mismo criterio
+que se usó en Fase 3 con `ACL-OUTSIDE-IN`.
+
+**Pasos (CLI, doble clic en el Router 4331 → CLI):**
+```
+enable
+configure terminal
+
+! ---- Administracion (VLAN10): solo HTTPS y FTP hacia el WEB-SERVER ----
+ip access-list extended ACL-ADMIN-IN
+ remark Administracion: solo HTTPS y FTP hacia el WEB-SERVER, resto denegado
+ permit tcp 192.168.10.0 0.0.0.255 host 192.168.40.10 eq 443
+ permit tcp 192.168.10.0 0.0.0.255 host 192.168.40.10 eq 21
+ permit tcp 192.168.10.0 0.0.0.255 host 192.168.40.10 eq 20
+ deny ip any any
+exit
+
+! ---- Usuarios (VLAN30): solo HTTPS hacia el WEB-SERVER ----
+ip access-list extended ACL-USUARIOS-IN
+ remark Usuarios: solo HTTPS hacia el WEB-SERVER, resto denegado
+ permit tcp 192.168.30.0 0.0.0.255 host 192.168.40.10 eq 443
+ deny ip any any
+exit
+
+! ---- Sistemas (VLAN20): HTTPS/HTTP/FTP/SSH/ICMP al WEB-SERVER + redes Admin y Usuarios ----
+ip access-list extended ACL-SISTEMAS-IN
+ remark Sistemas: HTTPS, HTTP, FTP, SSH e ICMP hacia el WEB-SERVER
+ permit tcp 192.168.20.0 0.0.0.255 host 192.168.40.10 eq 443
+ permit tcp 192.168.20.0 0.0.0.255 host 192.168.40.10 eq 80
+ permit tcp 192.168.20.0 0.0.0.255 host 192.168.40.10 eq 21
+ permit tcp 192.168.20.0 0.0.0.255 host 192.168.40.10 eq 20
+ permit tcp 192.168.20.0 0.0.0.255 host 192.168.40.10 eq 22
+ permit icmp 192.168.20.0 0.0.0.255 host 192.168.40.10
+ remark Sistemas: acceso completo a las redes de Administracion y Usuarios
+ permit ip 192.168.20.0 0.0.0.255 192.168.10.0 0.0.0.255
+ permit ip 192.168.20.0 0.0.0.255 192.168.30.0 0.0.0.255
+ deny ip any any
+exit
+
+end
+write memory
+```
+- `192.168.10.0 0.0.0.255`: red de origen + **máscara wildcard** (ver `GLOSARIO.md`) — significa
+  "cualquier host de la red 192.168.10.0/24", no una IP puntual.
+- `host 192.168.40.10`: destino puntual, siempre el WEB-SERVER (única IP de la DMZ).
+- Puertos: `443` HTTPS, `80` HTTP, `21`/`20` FTP (control/datos, mismo criterio que Fase 3), `22`
+  SSH (ver nota de alcance arriba). `permit icmp ...` sin `eq` porque ICMP no usa puertos.
+- `permit ip 192.168.20.0 0.0.0.255 192.168.10.0 0.0.0.255`: `ip` (no `tcp`) permite **cualquier
+  protocolo** entre esas dos redes — es "acceso completo", no limitado a un servicio, tal cual pide
+  la fila de Sistemas en la matriz.
+- `deny ip any any` al final de cada ACL: explícito por claridad (ya existe implícito), mismo
+  criterio que Fase 3.
+- **Todavía no se aplican a ninguna interfaz** — eso es la Tarea 2. Crearlas primero y aplicarlas
+  después evita dejar una VLAN bloqueada a mitad de una edición.
+
+**Verificación:** `show access-lists` → deben figurar las 3 ACLs (`ACL-ADMIN-IN`, `ACL-USUARIOS-IN`,
+`ACL-SISTEMAS-IN`) con sus reglas, más la `ACL-OUTSIDE-IN` de Fase 3.
+
+### Tarea 2 — Router 4331: aplicar cada ACL en la subinterfaz correspondiente (CLI)
+
+**Objetivo:** activar el filtrado, aplicando cada ACL en sentido **entrada** sobre la subinterfaz
+por la que llega el tráfico de esa VLAN.
+**Para qué:** una ACL creada pero no aplicada a ninguna interfaz no filtra nada — es solo una lista
+guardada. `in` en la subinterfaz de cada VLAN filtra lo que esa VLAN manda **hacia** el router,
+antes de que se rutee a cualquier otro lado (mismo criterio que `ACL-OUTSIDE-IN` en Fase 3).
+
+**Pasos (CLI, doble clic en el Router 4331 → CLI):**
+```
+enable
+configure terminal
+
+interface GigabitEthernet0/0/0.10
+ ip access-group ACL-ADMIN-IN in
+exit
+
+interface GigabitEthernet0/0/0.20
+ ip access-group ACL-SISTEMAS-IN in
+exit
+
+interface GigabitEthernet0/0/0.30
+ ip access-group ACL-USUARIOS-IN in
+exit
+
+end
+write memory
+```
+
+**Verificación:** `show ip interface GigabitEthernet0/0/0.10` (y `.20`/`.30`) → debe listar la ACL
+correspondiente aplicada como "inbound".
+
+**Troubleshooting real (apareció en ejecución):** con las ACLs de la Tarea 1 tal cual, el `ping`
+de PC-SIS1 al WEB-SERVER andaba bien, pero PC-SIS1 → PC-ADM1 y PC-SIS1 → PC-USR1 daban *timeout*.
+Causa: el tráfico WEB-SERVER↔VLANs solo cruza **una** subinterfaz con ACL (la del cliente; el lado
+`dmz`, `Gi0/0/1`, no tiene ACL aplicada), pero el tráfico Sistemas↔Admin/Usuarios cruza **dos**
+subinterfaces con ACL — la ida (permitida por `ACL-SISTEMAS-IN`) y la vuelta, que entra al router
+por `Gi0/0/0.10` o `.30` y ahí `ACL-ADMIN-IN`/`ACL-USUARIOS-IN` no tenían ninguna regla que dejara
+pasar una respuesta hacia Sistemas (solo tenían reglas hacia el WEB-SERVER). Con una ACL sin
+estado, permitir la ida de un lado no alcanza para que vuelva la respuesta del otro lado.
+
+**Solución aplicada:** agregar en `ACL-ADMIN-IN` y `ACL-USUARIOS-IN` una regla de **solo vuelta**
+hacia la red de Sistemas, usando `established` (TCP) y el tipo de mensaje `echo-reply` (ICMP) — ver
+`GLOSARIO.md`. Deja pasar la respuesta sin darle a Administración/Usuarios permiso para *iniciar*
+tráfico hacia Sistemas (verificado: `ping` de PC-ADM1 a PC-SIS1 sigue bloqueado, como corresponde).
+
+```
+enable
+configure terminal
+
+ip access-list extended ACL-ADMIN-IN
+ no deny ip any any
+ permit tcp 192.168.10.0 0.0.0.255 192.168.20.0 0.0.0.255 established
+ permit icmp 192.168.10.0 0.0.0.255 192.168.20.0 0.0.0.255 echo-reply
+ deny ip any any
+exit
+
+ip access-list extended ACL-USUARIOS-IN
+ no deny ip any any
+ permit tcp 192.168.30.0 0.0.0.255 192.168.20.0 0.0.0.255 established
+ permit icmp 192.168.30.0 0.0.0.255 192.168.20.0 0.0.0.255 echo-reply
+ deny ip any any
+exit
+
+end
+write memory
+```
+- `no deny ip any any` antes de agregar las reglas nuevas: en una ACL nombrada, las líneas nuevas
+  se agregan **al final** si no se les da un número de secuencia — agregarlas después del `deny ip
+  any any` las dejaría muertas (nunca se evaluarían). Por eso se saca el `deny`, se agregan las
+  reglas de vuelta, y se lo vuelve a poner al final.
+
+**Confirmado:** con este agregado, PC-SIS1 → `ping 192.168.10.10` y `ping 192.168.30.10` responden
+(0% loss); PC-ADM1 → `ping 192.168.20.10` sigue bloqueado. **Tarea 2 cerrada.**
+
+### Verificación de cierre de Fase 4
+
+| Prueba | Desde | Cómo | Resultado esperado |
+|---|---|---|---|
+| HTTPS al WEB-SERVER | PC-ADM1 | Web Browser → `https://192.168.40.10` | Carga la página |
+| HTTP al WEB-SERVER | PC-ADM1 | Web Browser → `http://192.168.40.10` | Bloqueado / timeout |
+| FTP al WEB-SERVER | PC-ADM1 | Command Prompt → `ftp 192.168.40.10`, login, `put` | Sube el archivo OK |
+| Ping al WEB-SERVER | PC-ADM1 | `ping 192.168.40.10` | Bloqueado (ICMP no está en la matriz de Admin) |
+| HTTPS al WEB-SERVER | PC-USR1 | Web Browser → `https://192.168.40.10` | Carga la página |
+| HTTP al WEB-SERVER | PC-USR1 | Web Browser → `http://192.168.40.10` | Bloqueado / timeout |
+| FTP al WEB-SERVER | PC-USR1 | Command Prompt → `ftp 192.168.40.10` | Bloqueado, no conecta |
+| HTTPS/HTTP/FTP al WEB-SERVER | PC-SIS1 | Browser + `ftp 192.168.40.10` | Los tres OK |
+| Ping al WEB-SERVER | PC-SIS1 | `ping 192.168.40.10` | Responde |
+| Acceso a red Admin | PC-SIS1 | `ping 192.168.10.10` (PC-ADM1) | Responde |
+| Acceso a red Usuarios | PC-SIS1 | `ping 192.168.30.10` (PC-USR1) | Responde |
+| Admin no llega a Sistemas | PC-ADM1 | `ping 192.168.20.10` (PC-SIS1) | Bloqueado (a propósito) |
+| Reglas SSH cargadas | Router 4331 | `show access-lists ACL-SISTEMAS-IN` | Aparece el `permit tcp ... eq 22` (no se prueba funcionalmente, ver nota de alcance) |
+| Contadores de hits | Router 4331 | `show access-lists` | Los `permit`/`deny` muestran matches (`(N matches)`) después de generar tráfico |
+
+Cuando corras esta batería, pasame resultados (capturas o texto) y lo valido contra este checklist
+antes de dar la Fase 4 por cerrada.
+
+**Confirmado (2026-09-16):** las 15 pruebas de la batería pasaron. Administración y Usuarios
+acceden al WEB-SERVER solo por los servicios de su fila de la matriz (resto bloqueado, incluido
+ICMP); Sistemas accede al WEB-SERVER por los 5 servicios y a las redes de Administración y Usuarios
+(ida y vuelta); Administración no puede iniciar tráfico hacia Sistemas (verificado). El permiso SSH
+de Sistemas quedó configurado y confirmado por `show access-lists`, sin prueba funcional por la
+limitación del Server-PT (ver nota de alcance al inicio de la fase). **Fase 4 completa.**

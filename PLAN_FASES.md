@@ -171,8 +171,11 @@ inter-VLAN, DMZ y acceso de Externos funcionando.
 - [x] **Fase 3** — completa (PC-EXT llega vía DSL-Modem-PT + Nube a Router ISP; ruta por defecto,
       NAT estático y ACL de entrada en el Router 4331; servicios activados en WEB-SERVER). Detalle
       y troubleshooting en `EJECUCION.md`.
-- [ ] **Fase 4** — políticas de seguridad / ACLs con mínimo privilegio (consigna 4 completa). **No
-      es opcional** — es núcleo de la consigna.
+- [x] **Fase 4** — completa (4 ACLs extendidas nombradas en el Router 4331: `ACL-ADMIN-IN`,
+      `ACL-USUARIOS-IN`, `ACL-SISTEMAS-IN` sobre las subinterfaces VLAN10/20/30, más
+      `ACL-OUTSIDE-IN` de Fase 3; matriz de mínimo privilegio verificada con batería de 15 pruebas
+      permitido/bloqueado). Troubleshooting de tráfico de vuelta Sistemas↔Admin/Usuarios (ACL sin
+      estado) y detalle completo en `EJECUCION.md`.
 - [ ] **Fase 5** — análisis de dispositivos adicionales (consigna 5) + batería de pruebas con
       capturas + informe PDF + entrega. **No es opcional** en su conjunto; dentro de ella, el
       *hardening* (SSH admin, claves cifradas, banner) sí es opcional (ver tabla de alineación
