@@ -33,8 +33,8 @@ con la consigna. Se marca lo que la cátedra **no pide**:
 | ACLs por segmento + mínimo privilegio (4) | Sí | Fase 4 — core |
 | Acceso de "Externos" al server (4) | Sí | Fase 3 — core (NAT) |
 | Análisis de seguridad adicional (5) | Sí | Fase 5 — core (escrito) |
-| Informe PDF + .pkt + .zip (entrega) | Sí | Fase 5 — core |
-| Hardening (SSH admin, claves cifradas, banner) | **No** | Fase 5 — **OPCIONAL** |
+| Informe PDF + .pkt + .zip (entrega) | Sí | Fase 6 — core |
+| Hardening (SSH admin, claves cifradas, banner) | **No** | **Descartado** — fuera de scope, no se implementa (decisión explícita) |
 | Navegación interna → Internet | **No** (solo hace falta para Externos) | Fase 3 — **OPCIONAL** |
 
 ## Decisiones tomadas
@@ -141,12 +141,26 @@ se valida el "estado al terminar" antes de pasar a la siguiente.
 - **Estado al terminar:** la matriz permitido/bloqueado se comporta según la tabla (p.ej. HTTPS
   OK y HTTP bloqueado para Usuarios).
 
-### Fase 5 — Análisis, verificación final y entrega  *(consigna 5 + entrega)*
-- **Consigna 5 (análisis escrito):** justificar dispositivos de seguridad adicionales (IDS/IPS,
-  AAA, WAF…), ubicación y función.
-- Batería de pruebas con capturas (accesos permitidos/bloqueados) para el informe.
-- Producir **informe PDF** + `RESOLUCION.pkt` final; comprimir en `.zip` (`TP1_SSI_ApellidoNombre.zip`).
-- *(Opcional)* Hardening: `enable secret`, `service password-encryption`, SSH, banner MOTD.
+### Fase 5 — Análisis de dispositivos de seguridad adicionales  *(consigna 5)*
+- **Análisis escrito, sin cableado ni configuración nueva:** si el usuario fuera el responsable de
+  seguridad de la empresa, qué dispositivo(s) de seguridad adicionales incorporaría, dónde los
+  ubicaría, qué función cumplirían y justificación técnica — contra esta topología puntual, no en
+  abstracto.
+- No se implementan en `RESOLUCION.pkt` (la consigna pide análisis, no armar el equipo).
+- **Estado al terminar:** análisis redactado, listo para volcarse al informe de Fase 6.
+
+**Cierre:** análisis completo en `ANALISIS_SEGURIDAD.md` — se proponen **IDS/IPS** (en línea entre
+el router del firewall y SW-DMZ, cubre que las ACLs no inspeccionan contenido) y **servidor de
+Syslog centralizado** (en VLAN 20 Sistemas, cubre que hoy no hay registro histórico de lo permitido
+o bloqueado). **Fase 5 completa.**
+
+### Fase 6 — Pruebas finales, evidencia y entrega
+- Batería de pruebas **end-to-end** con capturas (accesos permitidos/bloqueados) sobre todo lo
+  construido en Fases 1-4: conectividad interna, inter-VLAN, DMZ, matriz de ACLs por segmento y
+  acceso de Externos.
+- Producir **informe PDF** (capturas + el análisis de Fase 5) + `RESOLUCION.pkt` final; comprimir
+  en `.zip` (`TP1_SSI_ApellidoNombre.zip`) y enviar por correo según la consigna.
+- **Estado al terminar:** entrega lista para enviar.
 
 ## Riesgos / puntos a resolver durante la ejecución
 - **ASA 5505 licencia Base (RESUELTO):** migración a Router 4331. Detalle y tradeoff en
@@ -176,7 +190,7 @@ inter-VLAN, DMZ y acceso de Externos funcionando.
       `ACL-OUTSIDE-IN` de Fase 3; matriz de mínimo privilegio verificada con batería de 15 pruebas
       permitido/bloqueado). Troubleshooting de tráfico de vuelta Sistemas↔Admin/Usuarios (ACL sin
       estado) y detalle completo en `EJECUCION.md`.
-- [ ] **Fase 5** — análisis de dispositivos adicionales (consigna 5) + batería de pruebas con
-      capturas + informe PDF + entrega. **No es opcional** en su conjunto; dentro de ella, el
-      *hardening* (SSH admin, claves cifradas, banner) sí es opcional (ver tabla de alineación
-      arriba).
+- [x] **Fase 5** — completa (análisis escrito en `ANALISIS_SEGURIDAD.md`: IDS/IPS + servidor de
+      Syslog centralizado, ubicación y justificación técnica contra esta topología).
+- [ ] **Fase 6** — batería de pruebas end-to-end + capturas + informe PDF + `RESOLUCION.pkt` final
+      + `.zip` de entrega.

@@ -165,6 +165,19 @@ que elige solo. Para hacerlo bien a mano:
   permitir uno sin el otro — `permit icmp <red> <red> echo-reply` deja volver solo la *respuesta*
   de un ping ajeno, sin permitir que esa red *inicie* un ping nuevo hacia el otro lado. Mismo
   criterio que `established` para TCP, pero aplicado a ICMP.
+- **IDS (Intrusion Detection System) / IPS (Intrusion Prevention System):** un equipo que
+  **lee el contenido** del tráfico (no solo IP/puerto, como una ACL) y lo compara contra patrones
+  de ataques conocidos. El IDS solo **avisa** (detecta); el IPS además **corta** el tráfico
+  sospechoso en el momento (previene). Es la capa que le falta a una ACL: la ACL mira el "sobre"
+  (origen, destino, puerto), el IDS/IPS mira el "contenido de la carta". Propuesto en
+  `ANALISIS_SEGURIDAD.md` (consigna 5) — no se implementa en `RESOLUCION.pkt`, es un análisis
+  escrito.
+- **Syslog / servidor de logs centralizado:** protocolo (y servidor que lo recibe) para mandar
+  **registros** (*logs*) de eventos de red — conexiones permitidas, bloqueos de ACL, cambios de
+  config — desde varios equipos hacia un único lugar donde quedan guardados. Sin esto, cada equipo
+  solo guarda su propio historial efímero (p.ej. los contadores de `show access-lists`, que ni
+  sobreviven un reinicio si no se guardan). Propuesto en `ANALISIS_SEGURIDAD.md` (consigna 5) — no
+  se implementa en `RESOLUCION.pkt`, es un análisis escrito.
 - **Firewall con estado (*stateful*) vs. sin estado (*stateless*):** un firewall *stateful* (como
   la ASA) se acuerda de las conexiones que dejó pasar y permite automáticamente la respuesta (por
   ejemplo, si dejó salir un pedido web, deja entrar la respuesta sola, sin regla aparte). Una ACL
